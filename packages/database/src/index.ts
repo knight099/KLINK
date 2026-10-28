@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import path from 'path';
+import fs from 'fs';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -7,7 +8,23 @@ declare global {
 }
 
 const defaultDbPath = path.resolve(__dirname, '../prisma/dev.db');
-const dbUrl = process.env.DATABASE_URL || `file:${defaultDbPath}`;
+let dbUrl = process.env.DATABASE_URL || `file:${defaultDbPath}`;
+
+// Resilient handling for Vercel Serverless environment:
+// Vercel lambda root is read-only; copy SQLite db to /tmp so writes succeed
+if (process.env.VERCEL && dbUrl.startsWith('file:')) {
+  try {
+    const tmpDbPath = '/tmp/klink.db';
+    if (!fs.existsSync(tmpDbPath)) {
+      if (fs.existsSync(defaultDbPath)) {
+        fs.copyFileSync(defaultDbPath, tmpDbPath);
+      }
+    }
+    dbUrl = `file:${tmpDbPath}`;
+  } catch (err) {
+    console.warn('Vercel serverless /tmp database copy notice:', err);
+  }
+}
 
 export const prisma =
   global.prisma ||

@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "buildCommand": "pnpm run db:generate && pnpm --filter @klink/web run build",
+  "outputDirectory": "apps/web/dist",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
