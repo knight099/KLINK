@@ -1,0 +1,17 @@
+{
+  "short_name": "KLINK",
+  "name": "KLINK Construction Marketplace",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#FAF9F6",
+  "theme_color": "#141413",
+  "display": "standalone",
+  "orientation": "portrait"
+}
+

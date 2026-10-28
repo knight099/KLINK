@@ -1,0 +1,24 @@
+{
+  "name": "klink-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "District-based construction materials marketplace monorepo (KLINK)",
+  "scripts": {
+    "dev": "pnpm --parallel -r run dev",
+    "dev:api": "pnpm --filter @klink/api run dev",
+    "dev:web": "pnpm --filter @klink/web run dev",
+    "build": "pnpm -r run build",
+    "build:turbo": "turbo run build",
+    "lint": "turbo run lint",
+    "type-check": "pnpm -r run type-check",
+    "db:generate": "pnpm --filter @klink/database run db:generate",
+    "db:push": "pnpm --filter @klink/database run db:push",
+    "db:seed": "pnpm --filter @klink/database run db:seed",
+    "clean": "git clean -xdf node_modules"
+  },
+  "devDependencies": {
+    "turbo": "^2.4.4",
+    "typescript": "^5.8.2"
+  },
+  "packageManager": "pnpm@10.17.1"
+}

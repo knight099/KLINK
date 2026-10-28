@@ -3,6 +3,28 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Node / JS
+node_modules/
+dist/
+build/
+.turbo/
+.next/
+out/
+*.log
+.env
+.env.local
+.env.*.local
+*.tsbuildinfo
+
+# SQLite
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.db
+*.db-journal
+dev.db
+
+
 # C extensions
 *.so
 
