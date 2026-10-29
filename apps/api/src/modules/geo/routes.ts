@@ -53,5 +53,36 @@ export const geoRoutes: FastifyPluginAsyncZod = async (fastify) => {
       return reply.status(201).send({ district });
     }
   );
+
+  // Admin: Update / toggle district activation status
+  fastify.patch(
+    '/districts/:id',
+    {
+      onRequest: [fastify.requireRole('ADMIN')],
+      schema: {
+        tags: ['Geo', 'Admin'],
+        summary: 'Admin: Toggle district activation status',
+        params: z.object({ id: z.string() }),
+        body: z.object({
+          isActive: z.boolean().optional(),
+          name: z.string().optional()
+        })
+      }
+    },
+    async (request) => {
+      const { id } = request.params;
+      const { isActive, name } = request.body;
+
+      const district = await fastify.prisma.district.update({
+        where: { id },
+        data: {
+          ...(isActive !== undefined ? { isActive } : {}),
+          ...(name ? { name } : {})
+        }
+      });
+
+      return { district };
+    }
+  );
 };
 

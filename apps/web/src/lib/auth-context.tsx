@@ -49,7 +49,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isDemoMode, setIsDemoModeState] = useState<boolean>(() => {
     const stored = localStorage.getItem('klink_demo_mode');
     if (stored !== null) return stored === 'true';
-    return import.meta.env.VITE_DEMO_MODE !== 'false';
+    if (import.meta.env.VITE_DEMO_MODE !== undefined) {
+      return import.meta.env.VITE_DEMO_MODE === 'true';
+    }
+    return import.meta.env.DEV;
   });
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);

@@ -37,8 +37,8 @@ import {
 } from 'lucide-react';
 
 interface AdminPortalProps {
-  subTab: 'overview' | 'suppliers' | 'consumers' | 'orders' | 'users' | 'catalog';
-  setSubTab: (tab: 'overview' | 'suppliers' | 'consumers' | 'orders' | 'users' | 'catalog') => void;
+  subTab: 'overview' | 'suppliers' | 'consumers' | 'orders' | 'payments' | 'users' | 'catalog';
+  setSubTab: (tab: 'overview' | 'suppliers' | 'consumers' | 'orders' | 'payments' | 'users' | 'catalog') => void;
 }
 
 export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) => {
@@ -118,6 +118,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
   const [editYardDeliveryFee, setEditYardDeliveryFee] = useState<number>(0);
   const [editYardMinOrderQty, setEditYardMinOrderQty] = useState<number>(1);
   const [editYardIsAvailable, setEditYardIsAvailable] = useState(true);
+
+  // Payments & Financial Audit State
+  const [payments, setPayments] = useState<any[]>([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [paymentSearch, setPaymentSearch] = useState('');
 
   // Master Catalog Filter States
   const [catalogSearch, setCatalogSearch] = useState('');
@@ -247,6 +252,43 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
     }
   };
 
+  const loadPayments = async () => {
+    setPaymentsLoading(true);
+    try {
+      const res = await apiFetch<any>('/admin/payments');
+      setPayments(res.payments || []);
+    } catch (e) {
+      console.error('Failed to load payments:', e);
+    } finally {
+      setPaymentsLoading(false);
+    }
+  };
+
+  const handleDeletePayment = async (paymentId: string) => {
+    if (!window.confirm('Are you sure you want to delete this payment record? This will adjust the customer ledger upon next transaction.')) {
+      return;
+    }
+    try {
+      await apiFetch(`/admin/payments/${paymentId}`, { method: 'DELETE' });
+      await loadPayments();
+      await loadMetrics();
+    } catch (e: any) {
+      alert(e.message || 'Failed to delete payment record');
+    }
+  };
+
+  const handleToggleDistrict = async (districtId: string, currentStatus: boolean) => {
+    try {
+      await apiFetch(`/geo/districts/${districtId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: !currentStatus })
+      });
+      await loadMetrics();
+    } catch (e: any) {
+      alert(e.message || 'Failed to toggle district status');
+    }
+  };
+
   useEffect(() => {
     if (!user || user.role !== 'ADMIN') {
       if (isDemoMode) {
@@ -260,6 +302,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
     loadOrders();
     loadCustomers();
     loadUsers();
+    loadPayments();
   }, [user, isDemoMode]);
 
   useEffect(() => {
@@ -268,6 +311,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
       if (subTab === 'consumers') loadCustomers();
       if (subTab === 'users') loadUsers();
       if (subTab === 'suppliers') loadSuppliers();
+      if (subTab === 'payments') loadPayments();
     }
   }, [subTab, orderStatusFilter]);
 
@@ -800,6 +844,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
             Buyers & Udhaar {customers.length > 0 ? `(${customers.length})` : ''}
           </button>
           <button
+            onClick={() => setSubTab('payments')}
+            className={`px-3 py-1.5 text-xs rounded-lg transition-all cursor-pointer font-medium ${
+              subTab === 'payments' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
+            }`}
+          >
+            Payments Audit {payments.length > 0 ? `(${payments.length})` : ''}
+          </button>
+          <button
             onClick={() => setSubTab('users')}
             className={`px-3 py-1.5 text-xs rounded-lg transition-all cursor-pointer font-medium ${
               subTab === 'users' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
@@ -886,19 +938,30 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               <span>District Rollout Status (Bihar)</span>
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {metricsData?.districtBreakdown?.map((dist: any) => (
-                <div key={dist.id} className="p-3.5 rounded-xl border border-stone-200 bg-stone-50/60 flex items-center justify-between">
-                  <div>
-                    <h3 className="font-semibold text-xs text-stone-900">{dist.name}</h3>
-                    <p className="text-[11px] text-stone-500 font-mono mt-0.5">
-                      {dist._count?.suppliers || 0} Suppliers • {dist._count?.orders || 0} Orders
-                    </p>
+              {metricsData?.districtBreakdown?.map((dist: any) => {
+                const isLive = dist.isActive !== false;
+                return (
+                  <div key={dist.id} className="p-3.5 rounded-xl border border-stone-200 bg-stone-50/60 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold text-xs text-stone-900">{dist.name}</h3>
+                      <p className="text-[11px] text-stone-500 font-mono mt-0.5">
+                        {dist._count?.suppliers || 0} Suppliers • {dist._count?.orders || 0} Orders
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleToggleDistrict(dist.id, isLive)}
+                      title={`Click to ${isLive ? 'pause' : 'activate'} ${dist.name} district`}
+                      className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-medium transition-colors cursor-pointer border ${
+                        isLive
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                          : 'bg-stone-100 text-stone-500 border-stone-200 hover:bg-stone-200'
+                      }`}
+                    >
+                      {isLive ? '● Live Hub' : '○ Paused'}
+                    </button>
                   </div>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">
-                    Live Hub
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1337,6 +1400,157 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
         </div>
       )}
 
+      {/* PAYMENTS & FINANCIAL AUDIT TAB */}
+      {subTab === 'payments' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-stone-100 text-stone-700 border border-stone-200 uppercase tracking-wider">
+                  Financial Ledger Audit
+                </span>
+                <span className="text-xs font-mono text-stone-500">
+                  {payments.length} Payments Recorded
+                </span>
+              </div>
+              <h2 className="text-sm sm:text-base font-semibold tracking-tight text-stone-900 mt-1">
+                Platform Payments & Udhaar Transactions
+              </h2>
+              <p className="text-xs text-stone-500">
+                Audit all settlement payments, cash vouchers, bank transfers, and eliminate erroneous ledger transactions
+              </p>
+            </div>
+
+            <button
+              onClick={loadPayments}
+              className="px-3 py-1.5 rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-mono flex items-center space-x-1.5 cursor-pointer self-start sm:self-auto"
+            >
+              <RotateCcw className={`w-3.5 h-3.5 ${paymentsLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+          </div>
+
+          {/* Search bar */}
+          <div className="bg-white p-3.5 rounded-xl border border-stone-200 shadow-subtle flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search by customer, supplier, order #, or memo..."
+                value={paymentSearch}
+                onChange={(e) => setPaymentSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 border border-stone-200 rounded-lg text-xs font-mono focus:outline-hidden focus:border-stone-900 bg-stone-50/50"
+              />
+            </div>
+            {paymentSearch && (
+              <button
+                onClick={() => setPaymentSearch('')}
+                className="px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 text-xs font-mono cursor-pointer"
+              >
+                Clear Filter
+              </button>
+            )}
+          </div>
+
+          {/* Payments Table / List */}
+          {paymentsLoading ? (
+            <div className="bg-white rounded-xl border border-stone-200 p-12 text-center text-xs font-mono text-stone-500">
+              Loading payment audit ledger...
+            </div>
+          ) : payments.length === 0 ? (
+            <div className="bg-white rounded-xl border border-stone-200 p-12 text-center text-xs font-mono text-stone-500">
+              No payments recorded yet across the marketplace.
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-stone-200 shadow-subtle overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-stone-50 border-b border-stone-200 text-[10px] font-mono text-stone-600 uppercase tracking-wider">
+                    <tr>
+                      <th className="py-3 px-4">Date & ID</th>
+                      <th className="py-3 px-4">Buyer / Customer</th>
+                      <th className="py-3 px-4">Dealer / Yard</th>
+                      <th className="py-3 px-4">Order Link</th>
+                      <th className="py-3 px-4">Mode</th>
+                      <th className="py-3 px-4 text-right">Amount</th>
+                      <th className="py-3 px-4">Audit Memo</th>
+                      <th className="py-3 px-4 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100 font-mono text-[11px]">
+                    {payments
+                      .filter((p) => {
+                        if (!paymentSearch) return true;
+                        const q = paymentSearch.toLowerCase();
+                        return (
+                          p.customer?.fullName?.toLowerCase().includes(q) ||
+                          p.customer?.phone?.includes(q) ||
+                          p.supplier?.businessName?.toLowerCase().includes(q) ||
+                          p.order?.orderNumber?.toLowerCase().includes(q) ||
+                          p.notes?.toLowerCase().includes(q) ||
+                          p.paymentMode?.toLowerCase().includes(q)
+                        );
+                      })
+                      .map((pay) => (
+                        <tr key={pay.id} className="hover:bg-stone-50/80 transition-colors">
+                          <td className="py-3 px-4 text-stone-500">
+                            <div>{new Date(pay.recordedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                            <div className="text-[9px] text-stone-400 truncate max-w-[90px]">{pay.id.slice(-8)}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="font-semibold text-stone-900">{pay.customer?.fullName || 'Walk-in Buyer'}</div>
+                            <div className="text-[10px] text-stone-500">{pay.customer?.phone || '—'}</div>
+                          </td>
+                          <td className="py-3 px-4 text-stone-800 font-medium">
+                            {pay.supplier?.businessName || '—'}
+                          </td>
+                          <td className="py-3 px-4">
+                            {pay.order ? (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-stone-100 text-stone-800 border border-stone-200">
+                                {pay.order.orderNumber}
+                              </span>
+                            ) : (
+                              <span className="text-stone-400 italic">Khata Settlement</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-medium border ${
+                              pay.paymentMode === 'CASH'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : pay.paymentMode === 'UPI_DIRECT'
+                                ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                : pay.paymentMode === 'UDHAAR'
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : 'bg-stone-100 text-stone-700 border-stone-200'
+                            }`}>
+                              {pay.paymentMode.replace('_', ' ')}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right font-bold text-stone-900 tabular-nums">
+                            ₹{pay.amount.toLocaleString('en-IN')}
+                          </td>
+                          <td className="py-3 px-4 text-stone-600 max-w-xs truncate text-[10px]">
+                            {pay.notes || <span className="text-stone-300">—</span>}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <button
+                              onClick={() => handleDeletePayment(pay.id)}
+                              className="p-1.5 rounded-md text-stone-400 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer"
+                              title="Delete Payment Record"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* USERS & LOGINS TAB */}
       {subTab === 'users' && (
         <div className="space-y-4">
@@ -1462,6 +1676,157 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* PAYMENTS & FINANCIAL AUDIT TAB */}
+      {subTab === 'payments' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-stone-100 text-stone-700 border border-stone-200 uppercase tracking-wider">
+                  Financial Ledger Audit
+                </span>
+                <span className="text-xs font-mono text-stone-500">
+                  {payments.length} Payments Recorded
+                </span>
+              </div>
+              <h2 className="text-sm sm:text-base font-semibold tracking-tight text-stone-900 mt-1">
+                Platform Payments & Udhaar Transactions
+              </h2>
+              <p className="text-xs text-stone-500">
+                Audit all settlement payments, cash vouchers, bank transfers, and eliminate erroneous ledger transactions
+              </p>
+            </div>
+
+            <button
+              onClick={loadPayments}
+              className="px-3 py-1.5 rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-mono flex items-center space-x-1.5 cursor-pointer self-start sm:self-auto"
+            >
+              <RotateCcw className={`w-3.5 h-3.5 ${paymentsLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+          </div>
+
+          {/* Search bar */}
+          <div className="bg-white p-3.5 rounded-xl border border-stone-200 shadow-subtle flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search by customer, supplier, order #, or memo..."
+                value={paymentSearch}
+                onChange={(e) => setPaymentSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 border border-stone-200 rounded-lg text-xs font-mono focus:outline-hidden focus:border-stone-900 bg-stone-50/50"
+              />
+            </div>
+            {paymentSearch && (
+              <button
+                onClick={() => setPaymentSearch('')}
+                className="px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 text-xs font-mono cursor-pointer"
+              >
+                Clear Filter
+              </button>
+            )}
+          </div>
+
+          {/* Payments Table / List */}
+          {paymentsLoading ? (
+            <div className="bg-white rounded-xl border border-stone-200 p-12 text-center text-xs font-mono text-stone-500">
+              Loading payment audit ledger...
+            </div>
+          ) : payments.length === 0 ? (
+            <div className="bg-white rounded-xl border border-stone-200 p-12 text-center text-xs font-mono text-stone-500">
+              No payments recorded yet across the marketplace.
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-stone-200 shadow-subtle overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-stone-50 border-b border-stone-200 text-[10px] font-mono text-stone-600 uppercase tracking-wider">
+                    <tr>
+                      <th className="py-3 px-4">Date & ID</th>
+                      <th className="py-3 px-4">Buyer / Customer</th>
+                      <th className="py-3 px-4">Dealer / Yard</th>
+                      <th className="py-3 px-4">Order Link</th>
+                      <th className="py-3 px-4">Mode</th>
+                      <th className="py-3 px-4 text-right">Amount</th>
+                      <th className="py-3 px-4">Audit Memo</th>
+                      <th className="py-3 px-4 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100 font-mono text-[11px]">
+                    {payments
+                      .filter((p) => {
+                        if (!paymentSearch) return true;
+                        const q = paymentSearch.toLowerCase();
+                        return (
+                          p.customer?.fullName?.toLowerCase().includes(q) ||
+                          p.customer?.phone?.includes(q) ||
+                          p.supplier?.businessName?.toLowerCase().includes(q) ||
+                          p.order?.orderNumber?.toLowerCase().includes(q) ||
+                          p.notes?.toLowerCase().includes(q) ||
+                          p.paymentMode?.toLowerCase().includes(q)
+                        );
+                      })
+                      .map((pay) => (
+                        <tr key={pay.id} className="hover:bg-stone-50/80 transition-colors">
+                          <td className="py-3 px-4 text-stone-500">
+                            <div>{new Date(pay.recordedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                            <div className="text-[9px] text-stone-400 truncate max-w-[90px]">{pay.id.slice(-8)}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="font-semibold text-stone-900">{pay.customer?.fullName || 'Walk-in Buyer'}</div>
+                            <div className="text-[10px] text-stone-500">{pay.customer?.phone || '—'}</div>
+                          </td>
+                          <td className="py-3 px-4 text-stone-800 font-medium">
+                            {pay.supplier?.businessName || '—'}
+                          </td>
+                          <td className="py-3 px-4">
+                            {pay.order ? (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-stone-100 text-stone-800 border border-stone-200">
+                                {pay.order.orderNumber}
+                              </span>
+                            ) : (
+                              <span className="text-stone-400 italic">Khata Settlement</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-medium border ${
+                              pay.paymentMode === 'CASH'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : pay.paymentMode === 'UPI_DIRECT'
+                                ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                : pay.paymentMode === 'UDHAAR'
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : 'bg-stone-100 text-stone-700 border-stone-200'
+                            }`}>
+                              {pay.paymentMode.replace('_', ' ')}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right font-bold text-stone-900 tabular-nums">
+                            ₹{pay.amount.toLocaleString('en-IN')}
+                          </td>
+                          <td className="py-3 px-4 text-stone-600 max-w-xs truncate text-[10px]">
+                            {pay.notes || <span className="text-stone-300">—</span>}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <button
+                              onClick={() => handleDeletePayment(pay.id)}
+                              className="p-1.5 rounded-md text-stone-400 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer"
+                              title="Delete Payment Record"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>

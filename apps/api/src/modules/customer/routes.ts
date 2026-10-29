@@ -148,16 +148,25 @@ export const customerRoutes: FastifyPluginAsyncZod = async (fastify) => {
         return reply.status(400).send({ error: 'Customer profile missing' });
       }
 
-      const orders = await fastify.prisma.order.findMany({
-        where: { customerId },
-        include: {
-          supplier: true,
-          items: true
-        },
-        orderBy: { createdAt: 'desc' }
-      });
+      const [orders, ledgers] = await Promise.all([
+        fastify.prisma.order.findMany({
+          where: { customerId },
+          include: {
+            supplier: true,
+            items: true
+          },
+          orderBy: { createdAt: 'desc' }
+        }),
+        fastify.prisma.customerLedger.findMany({
+          where: { customerId }
+        })
+      ]);
 
-      return { orders };
+      const totalOutstanding = ledgers.reduce((acc, l) => acc + (l.outstandingBalance || 0), 0);
+      const totalPurchased = ledgers.reduce((acc, l) => acc + (l.totalPurchased || 0), 0);
+      const totalPaid = ledgers.reduce((acc, l) => acc + (l.totalPaid || 0), 0);
+
+      return { orders, summary: { totalOutstanding, totalPurchased, totalPaid } };
     }
   );
 

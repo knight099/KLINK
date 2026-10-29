@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 export type PortalTab = 'customer' | 'supplier' | 'admin';
 export type CustomerSubTab = 'shop' | 'orders';
 export type SupplierSubTab = 'dashboard' | 'inventory' | 'orders' | 'deliveries' | 'ledger' | 'profile';
-export type AdminSubTab = 'overview' | 'suppliers' | 'consumers' | 'orders' | 'users' | 'catalog';
+export type AdminSubTab = 'overview' | 'suppliers' | 'consumers' | 'orders' | 'payments' | 'users' | 'catalog';
 
 export interface NavigationState {
   tab: PortalTab;
@@ -33,7 +33,7 @@ export function parseUrlToState(): NavigationState {
     supplierSubTab: (['dashboard', 'inventory', 'orders', 'deliveries', 'ledger', 'profile'].includes(subtab || '')
       ? subtab
       : 'dashboard') as SupplierSubTab,
-    adminSubTab: (['overview', 'suppliers', 'consumers', 'orders', 'users', 'catalog'].includes(subtab || '')
+    adminSubTab: (['overview', 'suppliers', 'consumers', 'orders', 'payments', 'users', 'catalog'].includes(subtab || '')
       ? subtab
       : 'overview') as AdminSubTab,
     isCartOpen: cart,

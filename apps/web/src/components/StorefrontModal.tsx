@@ -111,10 +111,10 @@ export const StorefrontModal: React.FC<StorefrontModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-stone-200 animate-in zoom-in-95 duration-150">
         {/* Header */}
-        <div className="p-5 sm:p-6 bg-gradient-to-br from-[#080C14] via-[#0F172A] to-[#1E293B] text-white relative">
+        <div className="p-5 sm:p-6 bg-[#141413] text-white relative border-b border-stone-800">
           <button
             onClick={onClose}
             className="absolute top-4 right-4 p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"

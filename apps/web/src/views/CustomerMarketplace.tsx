@@ -62,6 +62,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
   const [selectedSupplierData, setSelectedSupplierData] = useState<any | null>(null);
   const [isLoadingStorefront, setIsLoadingStorefront] = useState(false);
   const [orders, setOrders] = useState<any[]>([]);
+  const [orderSummary, setOrderSummary] = useState<{ totalOutstanding: number; totalPurchased: number; totalPaid: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategorySlug, setSelectedCategorySlug] = useState<string>('all');
   const [isLoadingSuppliers, setIsLoadingSuppliers] = useState(true);
@@ -168,7 +169,10 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
   // Load and live-poll Customer Orders if on 'orders' tab
   useEffect(() => {
     if (subTab !== 'orders' || !user) {
-      if (!user) setOrders([]);
+      if (!user) {
+        setOrders([]);
+        setOrderSummary(null);
+      }
       return;
     }
 
@@ -176,7 +180,12 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
     const fetchOrders = () => {
       apiFetch<any>('/customer/orders')
         .then((res) => {
-          if (isMounted) setOrders(res.orders || []);
+          if (isMounted) {
+            setOrders(res.orders || []);
+            if (res.summary) {
+              setOrderSummary(res.summary);
+            }
+          }
         })
         .catch(console.error);
     };
@@ -382,15 +391,39 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
       {/* VIEW 1: MY SITE ORDERS & LIVE TRACKING */}
       {subTab === 'orders' ? (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <h2 className="text-base font-black text-slate-900">Site Orders & Delivery Status</h2>
-              <p className="text-xs text-slate-500">Track pending confirmations and active site dumps in Darbhanga</p>
+              <h2 className="text-sm font-mono font-semibold uppercase tracking-wider text-stone-900">Site Orders & Live Fleet Status</h2>
+              <p className="text-xs text-stone-500 mt-0.5">Track real-time tractor dispatch and site material drops</p>
             </div>
-            <span className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded-xl">
-              {orders.length} total orders
+            <span className="text-xs font-mono text-stone-600 bg-stone-100 border border-stone-200 px-3 py-1 rounded-lg self-start sm:self-auto">
+              {orders.length} Total Orders
             </span>
           </div>
+
+          {/* Customer Udhaar & Account Ledger Summary Ribbon */}
+          {user && orderSummary && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-3.5 rounded-xl border border-stone-200 bg-white shadow-2xs">
+                <span className="block text-[11px] font-mono uppercase tracking-wider text-stone-500">Total Billed</span>
+                <span className="text-sm font-mono font-bold text-stone-900 tabular-nums">
+                  ₹{(orderSummary.totalPurchased || 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+              <div className="p-3.5 rounded-xl border border-stone-200 bg-white shadow-2xs">
+                <span className="block text-[11px] font-mono uppercase tracking-wider text-stone-500">Total Paid</span>
+                <span className="text-sm font-mono font-bold text-emerald-700 tabular-nums">
+                  ₹{(orderSummary.totalPaid || 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+              <div className="p-3.5 rounded-xl border border-rose-200 bg-rose-50/50 shadow-2xs">
+                <span className="block text-[11px] font-mono uppercase tracking-wider text-rose-600">Pending Udhaar Dues</span>
+                <span className="text-sm font-mono font-bold text-rose-700 tabular-nums">
+                  ₹{(orderSummary.totalOutstanding || 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+            </div>
+          )}
 
           {!user ? (
             <div className="p-12 text-center bg-white rounded-xl border border-stone-200 space-y-3 shadow-xs">
@@ -434,7 +467,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                 return (
                   <div
                     key={order.id}
-                    className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-4 hover:border-slate-300 transition-all"
+                    className="bg-white rounded-xl border border-stone-200 p-5 sm:p-6 shadow-xs space-y-4 hover:border-stone-300 transition-all"
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-2">
                       <div>
@@ -895,7 +928,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
         /* VIEW 3: SWIGGY/ZOMATO YARD STOREFRONT (RESTAURANT MENU PAGE) */
         <div className="space-y-6">
           {/* Sticky Header with Back Button */}
-          <div className="bg-[#080C14] text-white rounded-3xl p-6 sm:p-7 shadow-2xl border border-slate-800 space-y-4">
+          <div className="bg-[#141413] text-white rounded-xl p-6 sm:p-7 shadow-xl border border-stone-800 space-y-4">
             <button
               onClick={() => {
                 handleSelectYard(null);
@@ -1016,7 +1049,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
             </div>
 
             {filteredYardProducts.length === 0 ? (
-              <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 text-slate-500 text-xs">
+              <div className="p-12 text-center bg-white rounded-xl border border-stone-200 text-stone-500 text-xs">
                 No materials match your filter in this yard.
               </div>
             ) : (
@@ -1028,7 +1061,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                   return (
                     <div
                       key={prod.id}
-                      className="bg-white rounded-3xl border border-slate-200 hover:border-slate-300 p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-3"
+                      className="bg-white rounded-xl border border-stone-200 hover:border-stone-400 p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-3"
                     >
                       <div className="space-y-2">
                         <div className="flex items-start justify-between">
@@ -1208,8 +1241,8 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
 
           {/* BUDGET-TO-QUANTITY CALCULATOR MODAL */}
           {budgetModalProduct && (
-            <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-              <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 border border-slate-200">
+            <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+              <div className="bg-white rounded-xl max-w-md w-full shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 border border-stone-200">
                 <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                   <div className="flex items-center space-x-2">
                     <div className="p-2 rounded-xl bg-amber-100 text-amber-800">

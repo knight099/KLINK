@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
+import { useDistrict } from '../lib/district-context';
 import {
   TrendingUp,
   Package,
@@ -35,7 +36,8 @@ import {
   CreditCard,
   ChevronRight,
   Hash,
-  Trash2
+  Trash2,
+  MessageSquare
 } from 'lucide-react';
 
 interface SupplierPortalProps {
@@ -45,6 +47,7 @@ interface SupplierPortalProps {
 
 export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTab }) => {
   const { user, switchPersona, isDemoMode, login } = useAuth();
+  const { districts } = useDistrict();
 
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [products, setProducts] = useState<any[]>([]);
@@ -158,6 +161,12 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
   const [vehicleStatus, setVehicleStatus] = useState('AVAILABLE');
   const [isSavingVehicle, setIsSavingVehicle] = useState(false);
 
+  // Customer Khata Statement Drawer State
+  const [khataCustomer, setKhataCustomer] = useState<any | null>(null);
+  const [khataStatement, setKhataStatement] = useState<any | null>(null);
+  const [isKhataLoading, setIsKhataLoading] = useState(false);
+  const [profServiceDistricts, setProfServiceDistricts] = useState<string[]>([]);
+
   // Loaders
   const loadDashboard = async () => {
     try {
@@ -237,9 +246,24 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
         setProfGstin(res.supplier.gstin || '');
         setProfLogoUrl(res.supplier.logoUrl || '');
         setProfDescription(res.supplier.description || '');
+        const currentServiceDistricts = (res.supplier.serviceAreas || []).map((sa: any) => sa.districtId);
+        setProfServiceDistricts(currentServiceDistricts.length > 0 ? currentServiceDistricts : [res.supplier.districtId]);
       }
     } catch (e) {
       console.error('Error loading profile:', e);
+    }
+  };
+
+  const openKhataStatement = async (c: any) => {
+    setKhataCustomer(c);
+    setIsKhataLoading(true);
+    try {
+      const res = await apiFetch<any>(`/supplier/ledger/${c.customerId}`);
+      setKhataStatement(res);
+    } catch (e: any) {
+      alert(e.message || 'Failed to load customer passbook');
+    } finally {
+      setIsKhataLoading(false);
     }
   };
 
@@ -255,7 +279,8 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
           address: profAddress,
           gstin: profGstin,
           logoUrl: profLogoUrl,
-          description: profDescription
+          description: profDescription,
+          serviceDistrictIds: profServiceDistricts
         })
       });
       setProfileSaveSuccess(true);
@@ -269,7 +294,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
     }
   };
 
-  // Synchronize and auto-load all data on mount or status change
+  // Initial load of all portal datasets on user authentication
   useEffect(() => {
     if (!user || user.role !== 'SUPPLIER') {
       if (isDemoMode) {
@@ -295,7 +320,19 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
         setCategories(res.categories || []);
       })
     ]).finally(() => setIsLoading(false));
-  }, [user, selectedStatus, isDemoMode]);
+  }, [user, isDemoMode]);
+
+  // Lightweight status filter change: only reloads orders queue without re-fetching entire dashboard/catalog
+  const isFirstMount = useRef(true);
+  useEffect(() => {
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      return;
+    }
+    if (user && user.role === 'SUPPLIER') {
+      loadOrders();
+    }
+  }, [selectedStatus]);
 
   // Handle Order Status change
   const handleUpdateStatus = async (orderId: string, status: string, reason?: string) => {
@@ -960,7 +997,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
           </div>
 
           {/* Recent Orders Overview */}
-          <div className="bg-white rounded-3xl border border-slate-200/90 p-6 shadow-xs space-y-4">
+          <div className="bg-white rounded-xl border border-stone-200 p-6 shadow-xs space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-base font-black text-slate-900">Recent Yard Site Orders</h2>
@@ -1088,14 +1125,14 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
           </div>
 
           {/* Yard Delivery Fleet Showcase */}
-          <div className="bg-white rounded-3xl border border-slate-200/90 p-5 sm:p-6 shadow-xs space-y-4">
+          <div className="bg-white rounded-xl border border-stone-200 p-5 sm:p-6 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div className="flex items-center space-x-2.5">
-                <div className="p-2 rounded-2xl bg-blue-50 border border-blue-200 text-blue-700">
+                <div className="p-2 rounded-lg bg-stone-100 border border-stone-200 text-stone-700">
                   <Truck className="w-5 h-5 stroke-[2.2]" />
                 </div>
                 <div>
-                  <h3 className="font-black text-sm text-slate-900">Yard Transport Fleet ({vehicles.length} Vehicles)</h3>
+                  <h3 className="font-semibold text-sm text-stone-900">Yard Transport Fleet ({vehicles.length} Vehicles)</h3>
                   <p className="text-xs text-slate-500">Tractors, dumper tippers and pickup trucks available for delivery dispatches</p>
                 </div>
               </div>
@@ -1199,7 +1236,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
               </div>
 
               {deliveriesData?.readyToDispatch?.length === 0 ? (
-                <div className="p-6 text-center bg-white rounded-3xl border border-slate-200 text-slate-500 text-xs">
+                <div className="p-6 text-center bg-white rounded-xl border border-stone-200 text-stone-500 text-xs">
                   No orders waiting for vehicle assignment right now.
                 </div>
               ) : (
@@ -1209,7 +1246,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                     return (
                       <div
                         key={ord.id}
-                        className="bg-white rounded-3xl border border-amber-200/80 p-5 shadow-xs space-y-3 hover:border-amber-400 transition-all"
+                        className="bg-white rounded-xl border border-stone-200 p-5 shadow-xs space-y-3 hover:border-stone-400 transition-all"
                       >
                         <div className="flex justify-between items-start">
                           <div>
@@ -1266,7 +1303,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
               </div>
 
               {deliveriesData?.outForDelivery?.length === 0 ? (
-                <div className="p-6 text-center bg-white rounded-3xl border border-slate-200 text-slate-500 text-xs">
+                <div className="p-6 text-center bg-white rounded-xl border border-stone-200 text-stone-500 text-xs">
                   No vehicles currently in transit to sites.
                 </div>
               ) : (
@@ -1276,7 +1313,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                     return (
                       <div
                         key={ord.id}
-                        className="bg-white rounded-3xl border border-blue-200 p-5 shadow-xs space-y-3 hover:border-blue-400 transition-all"
+                        className="bg-white rounded-xl border border-stone-200 p-5 shadow-xs space-y-3 hover:border-stone-400 transition-all"
                       >
                         <div className="flex justify-between items-start">
                           <div>
@@ -1352,7 +1389,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                 <span>Delivered & Completed Dispatches ({deliveriesData?.deliveredRecently?.length || 0})</span>
               </h3>
 
-              <div className="bg-white rounded-3xl border border-slate-200 divide-y divide-slate-100 overflow-hidden">
+              <div className="bg-white rounded-xl border border-stone-200 divide-y divide-stone-100 overflow-hidden">
                 {deliveriesData?.deliveredRecently?.map((ord: any) => {
                   const custName = ord.customer?.fullName || ord.customer?.name || 'Customer';
                   const orderTotal = ord.finalTotal ?? ord.totalAmount ?? 0;
@@ -1464,7 +1501,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
               (order.vehicleNumber && order.vehicleNumber.toLowerCase().includes(q))
             );
           }).length === 0 ? (
-            <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 text-slate-500 text-xs">
+            <div className="p-12 text-center bg-white rounded-xl border border-stone-200 text-stone-500 text-xs">
               No orders found matching filter status "{selectedStatus}"{orderSearchQuery ? ` and query "${orderSearchQuery}"` : ''}.
             </div>
           ) : (
@@ -1491,7 +1528,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                 return (
                   <div
                     key={order.id}
-                    className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-4 hover:border-slate-300 transition-all"
+                    className="bg-white rounded-xl border border-stone-200 p-5 sm:p-6 shadow-xs space-y-4 hover:border-stone-300 transition-all"
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-2">
                       <div>
@@ -1846,17 +1883,27 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                           ₹{(c.outstandingBalance || 0).toLocaleString('en-IN')}
                         </td>
                         <td className="py-3 px-4 text-center">
-                          <button
-                            onClick={() => {
-                              setPaymentCustomerId(c.customerId);
-                              setPaymentOrderId('');
-                              setPaymentAmount(c.outstandingBalance > 0 ? c.outstandingBalance : 0);
-                              setIsPaymentModalOpen(true);
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-mono text-[11px] transition-colors cursor-pointer"
-                          >
-                            Settle Udhaar
-                          </button>
+                          <div className="flex items-center justify-center space-x-1.5">
+                            <button
+                              onClick={() => openKhataStatement(c)}
+                              className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-800 font-mono text-[11px] font-medium transition-colors cursor-pointer border border-stone-200 flex items-center space-x-1"
+                              title="View Bahi-Khata passbook statement"
+                            >
+                              <FileText className="w-3 h-3 text-stone-500" />
+                              <span>Passbook</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setPaymentCustomerId(c.customerId);
+                                setPaymentOrderId('');
+                                setPaymentAmount(c.outstandingBalance > 0 ? c.outstandingBalance : 0);
+                                setIsPaymentModalOpen(true);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-mono text-[11px] transition-colors cursor-pointer"
+                            >
+                              Settle
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1869,82 +1916,294 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
 
       {/* STORE PROFILE & BRANDING TAB */}
       {subTab === 'profile' && (
-        <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 space-y-6 max-w-2xl">
+        <div className="bg-white rounded-xl border border-stone-200 p-6 space-y-6 max-w-2xl shadow-xs">
           <div>
-            <h2 className="text-base font-black text-slate-900">Dealer Yard Profile & Branding</h2>
-            <p className="text-xs text-slate-500">Update how your construction materials yard appears to Darbhanga site buyers</p>
+            <h2 className="text-sm font-semibold font-mono uppercase tracking-wider text-stone-900">Dealer Yard Profile & Service Coverage</h2>
+            <p className="text-xs text-stone-500 mt-1">Configure yard details and multi-district dispatch radius across Bihar</p>
           </div>
 
           {profileSaveSuccess && (
-            <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center space-x-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>Yard Profile & Branding updated successfully!</span>
+            <div className="p-3.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-mono flex items-center space-x-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Yard Profile & Service Coverage updated successfully!</span>
             </div>
           )}
 
           <form onSubmit={handleSaveProfile} className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Business Yard Name</label>
+              <label className="block text-xs font-mono uppercase tracking-wider text-stone-600 mb-1">Business Yard Name</label>
               <input
                 type="text"
                 value={profBusinessName}
                 onChange={(e) => setProfBusinessName(e.target.value)}
                 required
-                className="w-full px-3.5 py-2.5 text-xs font-semibold border border-slate-200 rounded-xl"
+                className="w-full px-3 py-2 text-xs font-mono border border-stone-200 rounded-lg bg-white focus:outline-none focus:border-stone-400"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Owner Name</label>
+                <label className="block text-xs font-mono uppercase tracking-wider text-stone-600 mb-1">Owner Name</label>
                 <input
                   type="text"
                   value={profOwnerName}
                   onChange={(e) => setProfOwnerName(e.target.value)}
                   required
-                  className="w-full px-3.5 py-2.5 text-xs font-semibold border border-slate-200 rounded-xl"
+                  className="w-full px-3 py-2 text-xs font-mono border border-stone-200 rounded-lg bg-white focus:outline-none focus:border-stone-400"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">GSTIN Number</label>
+                <label className="block text-xs font-mono uppercase tracking-wider text-stone-600 mb-1">GSTIN Number</label>
                 <input
                   type="text"
                   value={profGstin}
                   onChange={(e) => setProfGstin(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-xs font-semibold border border-slate-200 rounded-xl"
+                  className="w-full px-3 py-2 text-xs font-mono border border-stone-200 rounded-lg bg-white focus:outline-none focus:border-stone-400 uppercase"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Yard Address (Darbhanga)</label>
+              <label className="block text-xs font-mono uppercase tracking-wider text-stone-600 mb-1">Yard Address / Depot Location</label>
               <textarea
                 value={profAddress}
                 onChange={(e) => setProfAddress(e.target.value)}
                 rows={2}
                 required
-                className="w-full px-3.5 py-2.5 text-xs font-semibold border border-slate-200 rounded-xl"
+                className="w-full px-3 py-2 text-xs font-mono border border-stone-200 rounded-lg bg-white focus:outline-none focus:border-stone-400"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Store Description / Bio</label>
+              <label className="block text-xs font-mono uppercase tracking-wider text-stone-600 mb-1">Store Description / Material Specialization</label>
               <textarea
                 value={profDescription}
                 onChange={(e) => setProfDescription(e.target.value)}
                 rows={3}
-                className="w-full px-3.5 py-2.5 text-xs font-semibold border border-slate-200 rounded-xl"
+                placeholder="e.g. Authorized UltraTech & Jindal Panther distributor. Direct site dumping available."
+                className="w-full px-3 py-2 text-xs font-mono border border-stone-200 rounded-lg bg-white focus:outline-none focus:border-stone-400"
               />
+            </div>
+
+            {/* Multi-District Delivery Coverage */}
+            <div className="pt-2 border-t border-stone-100">
+              <label className="block text-xs font-mono uppercase tracking-wider text-stone-700 mb-1">
+                Authorized Delivery Coverage Areas (Districts)
+              </label>
+              <p className="text-[11px] text-stone-500 mb-3">
+                Your storefront inventory will be visible to contractors situated in these selected districts:
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {districts.map((dist) => {
+                  const isChecked = profServiceDistricts.includes(dist.id);
+                  return (
+                    <label
+                      key={dist.id}
+                      className={`flex items-center space-x-2 p-2.5 rounded-lg border text-xs cursor-pointer transition-colors ${
+                        isChecked
+                          ? 'border-stone-900 bg-stone-50 font-medium text-stone-900'
+                          : 'border-stone-200 bg-white text-stone-600 hover:border-stone-300'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {
+                          if (isChecked) {
+                            if (profServiceDistricts.length <= 1) {
+                              alert('At least one service district is required');
+                              return;
+                            }
+                            setProfServiceDistricts(profServiceDistricts.filter((id) => id !== dist.id));
+                          } else {
+                            setProfServiceDistricts([...profServiceDistricts, dist.id]);
+                          }
+                        }}
+                        className="rounded border-stone-300 text-stone-900 focus:ring-0"
+                      />
+                      <span>{dist.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
 
             <button
               type="submit"
               disabled={isSavingProfile}
-              className="w-full py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-black shadow-md shadow-blue-600/20 hover:scale-101 transition-all disabled:opacity-50"
+              className="w-full py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white text-xs font-mono uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer shadow-xs"
             >
-              {isSavingProfile ? 'Saving...' : 'Save Yard Profile'}
+              {isSavingProfile ? 'Saving Changes...' : 'Save Yard Profile & Coverage'}
             </button>
           </form>
+        </div>
+      )}
+
+      {/* BAHI-KHATA / PASSBOOK STATEMENT DRAWER */}
+      {khataCustomer && (
+        <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs flex justify-end">
+          <div className="w-full max-w-xl bg-white h-full shadow-2xl flex flex-col border-l border-stone-200 animate-in slide-in-from-right duration-200">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-stone-200 flex items-center justify-between bg-stone-50/70">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 rounded-lg bg-stone-900 text-white">
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <h3 className="font-semibold text-sm text-stone-900">{khataCustomer.customerName || 'Contractor'}</h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-200 text-stone-700">Khata Ledger</span>
+                  </div>
+                  <p className="text-xs font-mono text-stone-500">{khataCustomer.customerPhone || 'N/A'}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setKhataCustomer(null);
+                  setKhataStatement(null);
+                }}
+                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+              {/* Financial Summary Ribbon */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3.5 rounded-xl border border-stone-200 bg-stone-50/50">
+                  <span className="block text-[11px] font-mono uppercase tracking-wider text-stone-500">Total Billed</span>
+                  <span className="text-sm font-mono font-bold text-stone-900 tabular-nums">
+                    ₹{((khataStatement?.summary?.totalPurchased ?? khataCustomer.totalPurchased) || 0).toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div className="p-3.5 rounded-xl border border-stone-200 bg-stone-50/50">
+                  <span className="block text-[11px] font-mono uppercase tracking-wider text-stone-500">Total Settled</span>
+                  <span className="text-sm font-mono font-bold text-emerald-700 tabular-nums">
+                    ₹{((khataStatement?.summary?.totalPaid ?? khataCustomer.totalPaid) || 0).toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div className="p-3.5 rounded-xl border border-rose-200 bg-rose-50/50">
+                  <span className="block text-[11px] font-mono uppercase tracking-wider text-rose-600">Pending Udhaar</span>
+                  <span className="text-sm font-mono font-bold text-rose-700 tabular-nums">
+                    ₹{((khataStatement?.summary?.outstandingBalance ?? khataCustomer.outstandingBalance) || 0).toLocaleString('en-IN')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Buttons: 1-Tap WhatsApp Reminder & Settle Payment */}
+              <div className="flex items-center space-x-2">
+                <a
+                  href={`https://wa.me/91${(khataCustomer.customerPhone || '').replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent(
+                    `Namaste ${(khataCustomer.customerName || 'Contractor Ji')}, this is an account statement update from ${
+                      profBusinessName || 'our dealer yard'
+                    }. Your pending Udhaar balance is ₹${(
+                      (khataStatement?.summary?.outstandingBalance ?? khataCustomer.outstandingBalance) || 0
+                    ).toLocaleString('en-IN')}. Please settle at your earliest convenience. Dhanyawad!`
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 flex items-center justify-center space-x-2 py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-mono text-xs font-medium transition-colors shadow-xs"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>Send WhatsApp Statement</span>
+                </a>
+                <button
+                  onClick={() => {
+                    const balance = (khataStatement?.summary?.outstandingBalance ?? khataCustomer.outstandingBalance) || 0;
+                    setPaymentCustomerId(khataCustomer.customerId);
+                    setPaymentOrderId('');
+                    setPaymentAmount(balance > 0 ? balance : 0);
+                    setIsPaymentModalOpen(true);
+                  }}
+                  className="py-2 px-4 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-mono text-xs font-medium transition-colors cursor-pointer shadow-xs"
+                >
+                  Record Payment
+                </button>
+              </div>
+
+              {/* Chronological Statement Timeline */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-stone-200 pb-2">
+                  <h4 className="text-xs font-mono uppercase tracking-wider text-stone-700 font-semibold">
+                    Chronological Ledger Entries (Debit & Credit)
+                  </h4>
+                  <span className="text-[11px] font-mono text-stone-500">
+                    {khataStatement?.transactions?.length || 0} Records
+                  </span>
+                </div>
+
+                {isKhataLoading ? (
+                  <div className="py-12 text-center text-xs font-mono text-stone-500">
+                    Loading bahi-khata statement...
+                  </div>
+                ) : !khataStatement?.transactions || khataStatement.transactions.length === 0 ? (
+                  <div className="py-8 text-center text-xs font-mono text-stone-400 border border-dashed border-stone-200 rounded-lg">
+                    No transactions recorded for this contractor yet.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {khataStatement.transactions.map((tx: any) => {
+                      const isDebit = tx.type === 'DEBIT_ORDER';
+                      return (
+                        <div
+                          key={tx.id}
+                          className={`p-3.5 rounded-xl border transition-all ${
+                            isDebit ? 'border-stone-200 bg-white' : 'border-emerald-200 bg-emerald-50/30'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="space-y-1">
+                              <div className="flex items-center space-x-2">
+                                <span
+                                  className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded ${
+                                    isDebit ? 'bg-stone-100 text-stone-700' : 'bg-emerald-100 text-emerald-800'
+                                  }`}
+                                >
+                                  {isDebit ? 'DISPATCHED ORDER (DEBIT)' : `PAYMENT RECEIVED (${tx.paymentMethod})`}
+                                </span>
+                                <span className="text-[11px] font-mono text-stone-400">
+                                  {tx.date ? new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}
+                                </span>
+                              </div>
+
+                              {isDebit && tx.items && tx.items.length > 0 && (
+                                <p className="text-xs text-stone-600 font-mono mt-1">
+                                  {tx.items.map((i: any) => `${i.quantity} ${i.unit || 'units'} ${i.productName}`).join(' • ')}
+                                </p>
+                              )}
+
+                              {!isDebit && tx.referenceNo && (
+                                <p className="text-xs text-emerald-700 font-mono mt-1">
+                                  Ref: {tx.referenceNo} {tx.notes ? `• ${tx.notes}` : ''}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="text-right">
+                              <span
+                                className={`text-sm font-mono font-bold tabular-nums ${
+                                  isDebit ? 'text-stone-900' : 'text-emerald-700'
+                                }`}
+                              >
+                                {isDebit ? '-' : '+'}₹{(tx.amount || 0).toLocaleString('en-IN')}
+                              </span>
+                              {isDebit && (
+                                <span className="block text-[10px] font-mono text-stone-400">
+                                  Status: {tx.paymentStatus}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

@@ -34,6 +34,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
     updateQuantity,
     removeItem,
     clearCart,
+    refreshCartPrices,
     totalMaterialAmount,
     deliveryCharge,
     finalTotal
@@ -55,9 +56,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
   const [saveThisAddress, setSaveThisAddress] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
 
-  // Load Customer's saved construction site addresses
+  // Load Customer's saved construction site addresses & sync fresh cart prices
   useEffect(() => {
     if (!isOpen) return;
+    refreshCartPrices();
     apiFetch<{ addresses: any[] }>('/customer/addresses')
       .then((res) => {
         const list = res.addresses || [];

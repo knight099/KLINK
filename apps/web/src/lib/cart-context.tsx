@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { apiFetch } from './api';
 
 export interface CartItem {
   supplierProductId: string;
@@ -22,6 +23,7 @@ interface CartContextType {
   updateQuantity: (supplierProductId: string, quantity: number) => void;
   removeItem: (supplierProductId: string) => void;
   clearCart: () => void;
+  refreshCartPrices: () => Promise<void>;
   totalMaterialAmount: number;
   deliveryCharge: number;
   finalTotal: number;
@@ -115,6 +117,31 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSupplierName(null);
   };
 
+  const refreshCartPrices = async () => {
+    if (!supplierId || items.length === 0) return;
+    try {
+      const res = await apiFetch<any>(`/marketplace/suppliers/${supplierId}/storefront`);
+      if (res && res.products) {
+        const prodMap = new Map<string, any>(res.products.map((p: any) => [p.id, p]));
+        setItems((prev) =>
+          prev.map((item) => {
+            const live = prodMap.get(item.supplierProductId);
+            if (live) {
+              return {
+                ...item,
+                unitPrice: live.sellingPrice ?? item.unitPrice,
+                deliveryCharge: live.deliveryCharge ?? item.deliveryCharge
+              };
+            }
+            return item;
+          })
+        );
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   const totalMaterialAmount = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
   const deliveryCharge = items.reduce((max, item) => Math.max(max, item.deliveryCharge), 0);
   const finalTotal = totalMaterialAmount + deliveryCharge;
@@ -130,6 +157,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updateQuantity,
         removeItem,
         clearCart,
+        refreshCartPrices,
         totalMaterialAmount,
         deliveryCharge,
         finalTotal,

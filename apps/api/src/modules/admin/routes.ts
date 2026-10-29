@@ -283,19 +283,24 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
         body: z.object({
           sellingPrice: z.number().optional(),
           stockQuantity: z.number().optional(),
+          deliveryCharge: z.number().optional(),
           deliveryFee: z.number().optional(),
           minOrderQty: z.number().optional(),
           isAvailable: z.boolean().optional()
         })
       }
     },
-    async (request, reply) => {
+    async (request) => {
       const { id } = request.params;
-      const data = request.body;
+      const { deliveryFee, deliveryCharge, ...rest } = request.body;
+      const finalDeliveryCharge = deliveryCharge ?? deliveryFee;
 
       const updated = await fastify.prisma.supplierProduct.update({
         where: { id },
-        data,
+        data: {
+          ...rest,
+          ...(finalDeliveryCharge !== undefined ? { deliveryCharge: finalDeliveryCharge } : {})
+        },
         include: { masterProduct: true }
       });
 
@@ -380,7 +385,7 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
           rejectionReason: z.string().optional(),
           finalTotal: z.number().optional(),
           balancePending: z.number().optional(),
-          paymentStatus: z.enum(['PENDING', 'PARTIAL', 'PAID', 'OVERDUE']).optional()
+          paymentStatus: z.enum(['PENDING', 'PARTIALLY_PAID', 'PAID', 'UDHAAR']).optional()
         })
       }
     },
@@ -406,25 +411,29 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
           const isOldDead = ['CANCELLED', 'REJECTED'].includes(oldStatus);
           const isNewDead = ['CANCELLED', 'REJECTED'].includes(newStatus);
 
-          // If transitioning from active to dead: restore stock and zero balancePending
+          // If transitioning from active to dead: restore stock only if it was previously accepted
           if (!isOldDead && isNewDead) {
-            for (const item of order.items) {
-              await tx.supplierProduct.update({
-                where: { id: item.supplierProductId },
-                data: { stockQuantity: { increment: item.quantity } }
-              });
+            if (oldStatus !== 'PENDING_APPROVAL') {
+              for (const item of order.items) {
+                await tx.supplierProduct.update({
+                  where: { id: item.supplierProductId },
+                  data: { stockQuantity: { increment: item.quantity } }
+                });
+              }
             }
             if (updateData.balancePending === undefined) {
               updateData.balancePending = 0;
             }
           }
-          // If reviving from dead back to active: decrement stock again!
+          // If reviving from dead back to active: decrement stock again
           else if (isOldDead && !isNewDead) {
-            for (const item of order.items) {
-              await tx.supplierProduct.update({
-                where: { id: item.supplierProductId },
-                data: { stockQuantity: { decrement: item.quantity } }
-              });
+            if (newStatus !== 'PENDING_APPROVAL') {
+              for (const item of order.items) {
+                await tx.supplierProduct.update({
+                  where: { id: item.supplierProductId },
+                  data: { stockQuantity: { decrement: item.quantity } }
+                });
+              }
             }
             if (updateData.balancePending === undefined) {
               updateData.balancePending = updateData.finalTotal || order.finalTotal;
@@ -439,6 +448,45 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
             supplier: true,
             customer: true,
             items: true
+          }
+        });
+
+        // Sync Customer Ledger so order corrections reflect immediately in outstanding debt
+        const orderSum = await tx.order.aggregate({
+          where: {
+            supplierId: order.supplierId,
+            customerId: order.customerId,
+            status: { notIn: ['PENDING_APPROVAL', 'CANCELLED', 'REJECTED'] }
+          },
+          _sum: { finalTotal: true }
+        });
+        const paymentSum = await tx.paymentRecord.aggregate({
+          where: {
+            supplierId: order.supplierId,
+            customerId: order.customerId
+          },
+          _sum: { amount: true }
+        });
+        const totalPurchased = orderSum._sum.finalTotal || 0;
+        const totalPaid = paymentSum._sum.amount || 0;
+        await tx.customerLedger.upsert({
+          where: {
+            supplierId_customerId: {
+              supplierId: order.supplierId,
+              customerId: order.customerId
+            }
+          },
+          create: {
+            supplierId: order.supplierId,
+            customerId: order.customerId,
+            totalPurchased,
+            totalPaid,
+            outstandingBalance: Math.max(0, totalPurchased - totalPaid)
+          },
+          update: {
+            totalPurchased,
+            totalPaid,
+            outstandingBalance: Math.max(0, totalPurchased - totalPaid)
           }
         });
 
@@ -684,29 +732,34 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
         body: z.object({
           fullName: z.string().optional(),
           phone: z.string().optional(),
-          defaultDistrictId: z.string().optional()
+          defaultDistrictId: z.string().optional(),
+          districtId: z.string().optional()
         })
       }
     },
     async (request, reply) => {
       const { id } = request.params;
-      const data = request.body;
+      const { districtId, defaultDistrictId, ...rest } = request.body;
+      const resolvedDistrictId = defaultDistrictId ?? districtId;
 
       const customer = await fastify.prisma.customer.findUnique({ where: { id } });
       if (!customer) {
         return reply.status(404).send({ error: 'Customer not found' });
       }
 
-      if (data.phone && data.phone !== customer.phone) {
+      if (rest.phone && rest.phone !== customer.phone) {
         await fastify.prisma.user.update({
           where: { id: customer.userId },
-          data: { phone: data.phone }
+          data: { phone: rest.phone }
         });
       }
 
       const updated = await fastify.prisma.customer.update({
         where: { id },
-        data
+        data: {
+          ...rest,
+          ...(resolvedDistrictId ? { defaultDistrictId: resolvedDistrictId } : {})
+        }
       });
 
       return { message: 'Customer updated successfully', customer: updated };
@@ -752,6 +805,23 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
       }
 
       if (targetSupplierId) {
+        const existingLedger = customer.ledgers.find((l) => l.supplierId === targetSupplierId);
+        const currentBalance = existingLedger ? existingLedger.outstandingBalance : 0;
+        const diff = currentBalance - newBalance;
+
+        // Persist the adjustment as an audit PaymentRecord so subsequent recalculations preserve it
+        if (diff !== 0) {
+          await fastify.prisma.paymentRecord.create({
+            data: {
+              supplierId: targetSupplierId,
+              customerId: id,
+              amount: diff,
+              paymentMode: 'UDHAAR',
+              notes: `Admin Balance Override: ${note} (₹${currentBalance} -> ₹${newBalance})`
+            }
+          });
+        }
+
         await fastify.prisma.customerLedger.upsert({
           where: {
             supplierId_customerId: {

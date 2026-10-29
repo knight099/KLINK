@@ -11,7 +11,7 @@ export type PaymentMode = z.infer<typeof PaymentModeEnum>;
 
 export const RecordPaymentInputSchema = z.object({
   orderId: z.string().optional(),
-  customerId: z.string().min(1, 'Customer ID is required'),
+  customerId: z.string().optional(),
   amount: z.number().positive('Payment amount must be greater than 0'),
   paymentMode: PaymentModeEnum,
   notes: z.string().optional(),

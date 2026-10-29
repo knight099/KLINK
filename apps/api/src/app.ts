@@ -25,6 +25,7 @@ import { aiGatewayRoutes } from './modules/ai/routes';
 
 export function buildApp() {
   const app = Fastify({
+    trustProxy: true,
     logger: {
       level: process.env.NODE_ENV === 'test' ? 'silent' : 'info'
     }
@@ -36,7 +37,24 @@ export function buildApp() {
 
   // Common plugins
   app.register(cors, {
-    origin: true,
+    origin: (origin, cb) => {
+      // In development or server-to-server/curl calls, allow
+      if (!origin || process.env.NODE_ENV !== 'production') {
+        return cb(null, true);
+      }
+      // In production, allow *.vercel.app, klink domains, or explicitly allowed origins
+      const allowedPatterns = [
+        /\.vercel\.app$/,
+        /^https:\/\/.*\.klink\.in$/,
+        /^https:\/\/klink\.in$/
+      ];
+      if (process.env.ALLOWED_ORIGINS) {
+        const extra = process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim());
+        if (extra.includes(origin)) return cb(null, true);
+      }
+      const isMatch = allowedPatterns.some((pattern) => pattern.test(origin));
+      cb(null, isMatch);
+    },
     credentials: true
   });
   app.register(sensible);

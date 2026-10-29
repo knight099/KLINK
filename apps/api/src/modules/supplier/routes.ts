@@ -32,12 +32,12 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
     supplierId: string,
     customerId: string
   ) => {
-    // Active orders are all orders except CANCELLED and REJECTED
+    // Active accepted orders (exclude unapproved quotes, cancelled, and rejected)
     const orderSum = await tx.order.aggregate({
       where: {
         supplierId,
         customerId,
-        status: { notIn: ['CANCELLED', 'REJECTED'] }
+        status: { notIn: ['PENDING_APPROVAL', 'CANCELLED', 'REJECTED'] }
       },
       _sum: { finalTotal: true }
     });
@@ -58,7 +58,7 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
       where: {
         supplierId,
         customerId,
-        status: { notIn: ['CANCELLED', 'REJECTED'] }
+        status: { notIn: ['PENDING_APPROVAL', 'CANCELLED', 'REJECTED'] }
       },
       orderBy: { createdAt: 'desc' },
       select: { createdAt: true }
@@ -196,23 +196,41 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
     {
       schema: {
         tags: ['Supplier Tenant'],
-        summary: 'Update store address, logo, description, and contact info',
+        summary: 'Update store address, logo, description, contact info, and delivery districts',
         body: z.object({
           businessName: z.string().min(2).optional(),
           ownerName: z.string().min(2).optional(),
           address: z.string().min(5).optional(),
           gstin: z.string().optional(),
           logoUrl: z.string().optional(),
-          description: z.string().optional()
+          description: z.string().optional(),
+          serviceDistrictIds: z.array(z.string()).optional()
         })
       }
     },
     async (request) => {
       const supplierId = getSupplierId(request);
+      const { serviceDistrictIds, ...rest } = request.body;
+
+      if (serviceDistrictIds && Array.isArray(serviceDistrictIds)) {
+        await fastify.prisma.supplierServiceArea.deleteMany({
+          where: { supplierId }
+        });
+        if (serviceDistrictIds.length > 0) {
+          await fastify.prisma.supplierServiceArea.createMany({
+            data: serviceDistrictIds.map((districtId) => ({
+              supplierId,
+              districtId,
+              isActive: true
+            }))
+          });
+        }
+      }
+
       const updated = await fastify.prisma.supplier.update({
         where: { id: supplierId },
-        data: request.body,
-        include: { district: true }
+        data: rest,
+        include: { district: true, serviceAreas: { include: { district: true } } }
       });
       return { message: 'Profile updated successfully', supplier: updated };
     }
@@ -641,6 +659,88 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
     }
   );
 
+  // Get customer specific Bahi-Khata chronological statement (orders + payments)
+  fastify.get(
+    '/ledger/:customerId',
+    {
+      schema: {
+        tags: ['Supplier Tenant'],
+        summary: 'Get customer specific chronological passbook statement (orders + payments)',
+        params: z.object({ customerId: z.string() })
+      }
+    },
+    async (request, reply) => {
+      const supplierId = getSupplierId(request);
+      const { customerId } = request.params;
+
+      const customer = await fastify.prisma.customer.findUnique({
+        where: { id: customerId }
+      });
+      if (!customer) return reply.status(404).send({ error: 'Customer not found' });
+
+      const ledger = await fastify.prisma.customerLedger.findUnique({
+        where: {
+          supplierId_customerId: { supplierId, customerId }
+        }
+      });
+
+      const orders = await fastify.prisma.order.findMany({
+        where: {
+          supplierId,
+          customerId,
+          status: { notIn: ['CANCELLED', 'REJECTED'] }
+        },
+        include: { items: true },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      const payments = await fastify.prisma.paymentRecord.findMany({
+        where: { supplierId, customerId },
+        orderBy: { recordedAt: 'desc' }
+      });
+
+      // Combine orders (debits) and payments (credits) chronologically
+      const statement = [
+        ...orders.map((o) => ({
+          id: o.id,
+          type: 'ORDER_DEBIT' as const,
+          date: o.createdAt.toISOString(),
+          reference: o.orderNumber,
+          amount: o.finalTotal,
+          status: o.status,
+          paymentStatus: o.paymentStatus,
+          notes: `${o.items.length} materials (${o.deliveryAddress})`,
+          items: o.items.map((i) => ({ name: i.masterProductName, qty: i.quantity, unit: i.unit, price: i.unitPrice }))
+        })),
+        ...payments.map((p) => ({
+          id: p.id,
+          type: 'PAYMENT_CREDIT' as const,
+          date: p.recordedAt.toISOString(),
+          reference: p.orderId ? 'Order Payment' : 'Direct Khata Settlement',
+          amount: p.amount,
+          status: 'SETTLED',
+          paymentStatus: p.paymentMode,
+          notes: p.notes || `Received via ${p.paymentMode}`,
+          items: []
+        }))
+      ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      return {
+        customer: {
+          id: customer.id,
+          name: customer.fullName,
+          phone: customer.phone
+        },
+        ledger: {
+          totalPurchased: ledger?.totalPurchased || 0,
+          totalPaid: ledger?.totalPaid || 0,
+          outstandingBalance: ledger?.outstandingBalance || 0
+        },
+        statement
+      };
+    }
+  );
+
   // 6. Manual & Walk-in Order Entry (Roadmap Supplier Manual Operations)
   fastify.post(
     '/orders/manual',
@@ -888,18 +988,43 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
 
       const challan = deliveryChallanNo || `CHAL-${Date.now().toString().slice(-6)}`;
 
-      const updated = await fastify.prisma.order.update({
-        where: { id },
-        data: {
-          status: 'OUT_FOR_DELIVERY',
-          driverName,
-          driverPhone,
-          vehicleNumber,
-          deliveryChallanNo: challan,
-          deliveryInstructions: deliveryInstructions || order.deliveryInstructions,
-          dispatchedAt: new Date()
-        },
-        include: { customer: true, items: true, paymentRecords: true }
+      const updated = await fastify.prisma.$transaction(async (tx) => {
+        // Direct dispatch from PENDING_APPROVAL: deduct inventory stock if not already deducted
+        if (order.status === 'PENDING_APPROVAL') {
+          for (const item of order.items) {
+            await tx.supplierProduct.update({
+              where: { id: item.supplierProductId },
+              data: { stockQuantity: { decrement: item.quantity } }
+            });
+          }
+        }
+
+        // Auto-assign vehicle status to ON_TRIP
+        if (vehicleNumber) {
+          await tx.supplierVehicle.updateMany({
+            where: { supplierId, vehicleNumber },
+            data: { status: 'ON_TRIP' }
+          });
+        }
+
+        const orderUpdated = await tx.order.update({
+          where: { id },
+          data: {
+            status: 'OUT_FOR_DELIVERY',
+            driverName,
+            driverPhone,
+            vehicleNumber,
+            deliveryChallanNo: challan,
+            deliveryInstructions: deliveryInstructions || order.deliveryInstructions,
+            dispatchedAt: new Date()
+          },
+          include: { customer: true, items: true, paymentRecords: true }
+        });
+
+        // Recalculate customer ledger
+        await recalculateCustomerLedger(tx, supplierId, order.customerId);
+
+        return orderUpdated;
       });
 
       return {
@@ -933,6 +1058,14 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
       if (!order) return reply.status(404).send({ error: 'Order not found' });
 
       const updated = await fastify.prisma.$transaction(async (tx) => {
+        // Release vehicle back to AVAILABLE status upon delivery
+        if (order.vehicleNumber) {
+          await tx.supplierVehicle.updateMany({
+            where: { supplierId, vehicleNumber: order.vehicleNumber },
+            data: { status: 'AVAILABLE' }
+          });
+        }
+
         const orderUpdated = await tx.order.update({
           where: { id },
           data: {

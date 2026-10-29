@@ -1,17 +1,18 @@
 import React from 'react';
-import { Home, Layers, Store, ClipboardList, Shield, ShoppingBag, HardHat, TrendingUp, Truck, Users, KeyRound, Package } from 'lucide-react';
+import { Home, Layers, Store, ClipboardList, Shield, ShoppingBag, HardHat, TrendingUp, Truck, Users, KeyRound, Package, CreditCard } from 'lucide-react';
 import { useCart } from '../lib/cart-context';
 import { useAuth } from '../lib/auth-context';
+import { AdminSubTab, CustomerSubTab, SupplierSubTab, PortalTab } from '../lib/useNavigationHistory';
 
 interface BottomNavProps {
-  currentTab: 'customer' | 'supplier' | 'admin';
-  setCurrentTab: (tab: 'customer' | 'supplier' | 'admin') => void;
-  customerSubTab: 'shop' | 'orders';
-  setCustomerSubTab: (sub: 'shop' | 'orders') => void;
-  supplierSubTab: 'dashboard' | 'inventory' | 'orders' | 'deliveries' | 'ledger' | 'profile';
-  setSupplierSubTab: (sub: 'dashboard' | 'inventory' | 'orders' | 'deliveries' | 'ledger' | 'profile') => void;
-  adminSubTab: 'overview' | 'suppliers' | 'consumers' | 'orders' | 'users' | 'catalog';
-  setAdminSubTab: (sub: 'overview' | 'suppliers' | 'consumers' | 'orders' | 'users' | 'catalog') => void;
+  currentTab: PortalTab;
+  setCurrentTab: (tab: PortalTab) => void;
+  customerSubTab: CustomerSubTab;
+  setCustomerSubTab: (sub: CustomerSubTab) => void;
+  supplierSubTab: SupplierSubTab;
+  setSupplierSubTab: (sub: SupplierSubTab) => void;
+  adminSubTab: AdminSubTab;
+  setAdminSubTab: (sub: AdminSubTab) => void;
   onOpenCart: () => void;
 }
 
@@ -30,7 +31,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   const { switchPersona } = useAuth();
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0B0F19]/95 backdrop-blur-lg border-t border-slate-800 text-slate-400 safe-bottom shadow-2xl">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#141413]/95 backdrop-blur-lg border-t border-stone-800 text-stone-400 safe-bottom shadow-2xl">
       <div className="flex items-center justify-around py-2 px-1">
         {/* Customer Experience */}
         {currentTab === 'customer' && (
@@ -188,6 +189,16 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             >
               <Users className="w-4 h-4 mb-0.5" />
               <span>Buyers</span>
+            </button>
+
+            <button
+              onClick={() => setAdminSubTab('payments')}
+              className={`flex flex-col items-center py-1 px-2 rounded-xl text-[10px] font-medium transition-all ${
+                adminSubTab === 'payments' ? 'text-stone-100 font-semibold' : 'text-stone-400 hover:text-stone-200'
+              }`}
+            >
+              <CreditCard className="w-4 h-4 mb-0.5" />
+              <span>Audit</span>
             </button>
 
             <button
