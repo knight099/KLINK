@@ -16,11 +16,20 @@ if (process.env.VERCEL && dbUrl.startsWith('file:')) {
   try {
     const tmpDbPath = '/tmp/klink.db';
     if (!fs.existsSync(tmpDbPath)) {
-      if (fs.existsSync(defaultDbPath)) {
-        fs.copyFileSync(defaultDbPath, tmpDbPath);
+      const candidates = [
+        path.resolve(process.cwd(), 'packages/database/prisma/dev.db'),
+        path.resolve(__dirname, '../prisma/dev.db'),
+        path.resolve(__dirname, '../../packages/database/prisma/dev.db'),
+        '/var/task/packages/database/prisma/dev.db'
+      ];
+      const sourceDb = candidates.find((p) => fs.existsSync(p));
+      if (sourceDb) {
+        fs.copyFileSync(sourceDb, tmpDbPath);
       }
     }
-    dbUrl = `file:${tmpDbPath}`;
+    if (fs.existsSync(tmpDbPath)) {
+      dbUrl = `file:${tmpDbPath}`;
+    }
   } catch (err) {
     console.warn('Vercel serverless /tmp database copy notice:', err);
   }

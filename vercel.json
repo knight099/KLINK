@@ -2,6 +2,11 @@
   "version": 2,
   "buildCommand": "pnpm -r run build",
   "outputDirectory": "apps/web/dist",
+  "functions": {
+    "api/**": {
+      "includeFiles": "packages/database/prisma/dev.db"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/(.*)",

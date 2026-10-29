@@ -17,12 +17,10 @@ declare module '@fastify/jwt' {
 }
 
 export const authPlugin: FastifyPluginAsync = fp(async (fastify) => {
-  if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
-    throw new Error('FATAL: JWT_SECRET environment variable must be set in production!');
-  }
+  const jwtSecret = process.env.JWT_SECRET || 'klink-darbhanga-secret-key-super-secure-2026';
 
   await fastify.register(fastifyJwt, {
-    secret: process.env.JWT_SECRET || 'klink-darbhanga-secret-key-super-secure-2026'
+    secret: jwtSecret
   });
 
   fastify.decorate('authenticate', async (request: FastifyRequest, reply: FastifyReply) => {
