@@ -7,33 +7,57 @@ declare global {
   var prisma: PrismaClient | undefined;
 }
 
-const defaultDbPath = path.resolve(__dirname, '../prisma/dev.db');
-let dbUrl = process.env.DATABASE_URL || `file:${defaultDbPath}`;
+// Automatically resolve environment variables from .env.local or .env if not yet injected
+function loadLocalEnv() {
+  if (process.env.DATABASE_URL) return;
 
-// Resilient handling for Vercel Serverless environment:
-// Vercel lambda root is read-only; copy SQLite db to /tmp so writes succeed
-if (process.env.VERCEL && dbUrl.startsWith('file:')) {
-  try {
-    const tmpDbPath = '/tmp/klink.db';
-    if (!fs.existsSync(tmpDbPath)) {
-      const candidates = [
-        path.resolve(process.cwd(), 'packages/database/prisma/dev.db'),
-        path.resolve(__dirname, '../prisma/dev.db'),
-        path.resolve(__dirname, '../../packages/database/prisma/dev.db'),
-        '/var/task/packages/database/prisma/dev.db'
-      ];
-      const sourceDb = candidates.find((p) => fs.existsSync(p));
-      if (sourceDb) {
-        fs.copyFileSync(sourceDb, tmpDbPath);
+  const candidateDirs = [
+    process.cwd(),
+    path.resolve(process.cwd(), '..'),
+    path.resolve(process.cwd(), '../..'),
+    path.resolve(__dirname, '..'),
+    path.resolve(__dirname, '../..'),
+    path.resolve(__dirname, '../../..')
+  ];
+
+  const envFileNames = ['.env.local', '.env'];
+
+  for (const dir of candidateDirs) {
+    for (const fileName of envFileNames) {
+      const fullPath = path.resolve(dir, fileName);
+      if (fs.existsSync(fullPath)) {
+        try {
+          const content = fs.readFileSync(fullPath, 'utf-8');
+          for (const rawLine of content.split('\n')) {
+            const line = rawLine.trim();
+            if (!line || line.startsWith('#')) continue;
+            const eqIdx = line.indexOf('=');
+            if (eqIdx !== -1) {
+              const key = line.slice(0, eqIdx).trim();
+              let val = line.slice(eqIdx + 1).trim();
+              if (
+                (val.startsWith('"') && val.endsWith('"')) ||
+                (val.startsWith("'") && val.endsWith("'"))
+              ) {
+                val = val.slice(1, -1);
+              }
+              if (!process.env[key]) {
+                process.env[key] = val;
+              }
+            }
+          }
+        } catch {
+          // ignore read error
+        }
       }
     }
-    if (fs.existsSync(tmpDbPath)) {
-      dbUrl = `file:${tmpDbPath}`;
-    }
-  } catch (err) {
-    console.warn('Vercel serverless /tmp database copy notice:', err);
+    if (process.env.DATABASE_URL) break;
   }
 }
+
+loadLocalEnv();
+
+const dbUrl = process.env.DATABASE_URL;
 
 export const prisma =
   global.prisma ||
@@ -52,4 +76,3 @@ if (process.env.NODE_ENV !== 'production') {
 
 export * from '@prisma/client';
 export { PrismaClient };
-

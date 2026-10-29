@@ -691,7 +691,7 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const spMap = new Map<string, any>(supplierProducts.map((sp) => [sp.id, sp]));
 
       let totalMaterialAmount = 0;
-      const orderItemsData = [];
+      const orderItemsData: any[] = [];
 
       for (const item of items) {
         const sp = spMap.get(item.supplierProductId);

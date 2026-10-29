@@ -796,7 +796,7 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
           customer: { select: { id: true, fullName: true, phone: true } },
           order: { select: { id: true, orderNumber: true } }
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { recordedAt: 'desc' },
         take: 100
       });
 
