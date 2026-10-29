@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "pnpm run db:generate && pnpm --filter @klink/web run build",
+  "buildCommand": "pnpm -r run build",
   "outputDirectory": "apps/web/dist",
   "rewrites": [
     {
@@ -13,3 +13,4 @@
     }
   ]
 }
+

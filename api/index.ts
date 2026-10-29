@@ -1,4 +1,11 @@
-import { buildApp } from '../apps/api/src/app';
+let buildApp: any;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  buildApp = require('../apps/api/dist/index').buildApp;
+} catch {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  buildApp = require('../apps/api/src/app').buildApp;
+}
 
 let app: any;
 

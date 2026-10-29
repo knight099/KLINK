@@ -650,7 +650,7 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
         fastify.prisma.district.findMany()
       ]);
 
-      const districtMap = new Map(districts.map((d) => [d.id, d]));
+      const districtMap = new Map<string, any>(districts.map((d: any) => [d.id, d]));
 
       const formatted = customers.map((c) => {
         const district = districtMap.get(c.defaultDistrictId);

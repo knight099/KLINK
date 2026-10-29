@@ -2,10 +2,10 @@
   "name": "@klink/api",
   "version": "1.0.0",
   "private": true,
-  "main": "dist/server.js",
+  "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsup src/server.ts --format cjs --out-dir dist",
+    "build": "tsup src/index.ts src/server.ts --format cjs --out-dir dist",
     "start": "node dist/server.js",
     "type-check": "tsc --noEmit"
   },

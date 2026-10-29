@@ -688,7 +688,7 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
         include: { masterProduct: true }
       });
 
-      const spMap = new Map(supplierProducts.map((sp) => [sp.id, sp]));
+      const spMap = new Map<string, any>(supplierProducts.map((sp) => [sp.id, sp]));
 
       let totalMaterialAmount = 0;
       const orderItemsData = [];
@@ -704,8 +704,8 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
 
         orderItemsData.push({
           supplierProductId: sp.id,
-          masterProductName: sp.masterProduct.name,
-          unit: sp.unit,
+          masterProductName: sp.masterProduct?.name || 'Material',
+          unit: sp.unit || sp.masterProduct?.defaultUnit || 'UNIT',
           quantity: item.quantity,
           unitPrice,
           totalPrice
