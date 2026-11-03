@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '../lib/auth-context';
 import { useDistrict } from '../lib/district-context';
-import { X, Lock, Phone, User, MapPin, Eye, EyeOff, ShieldCheck, AlertCircle } from 'lucide-react';
+import { getAppMode } from '../lib/api';
+import { X, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 export const AuthModal: React.FC = () => {
   const {
@@ -14,6 +15,7 @@ export const AuthModal: React.FC = () => {
     isDemoMode
   } = useAuth();
   const { activeDistrict, districts } = useDistrict();
+  const appMode = getAppMode();
 
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -34,7 +36,8 @@ export const AuthModal: React.FC = () => {
     setError(null);
     setIsLoading(true);
     try {
-      await login(phone.trim(), password);
+      const expectedRole = appMode === 'UNIFIED' ? undefined : appMode;
+      await login(phone.trim(), password, expectedRole);
     } catch (err: any) {
       setError(err?.message || 'Invalid mobile number or password');
     } finally {
@@ -92,12 +95,12 @@ export const AuthModal: React.FC = () => {
             </div>
             <div>
               <h3 className="font-semibold text-sm text-stone-900">
-                {authModalMode === 'LOGIN' ? 'Sign In to KLINK Exchange' : 'Create Contractor Account'}
+                {authModalMode === 'LOGIN' ? 'Sign In to KLINK' : 'Create Contractor / Buyer Account'}
               </h3>
               <p className="text-xs text-stone-500">
                 {authModalMode === 'LOGIN'
-                  ? 'Access site deliveries, rate cards, and dealer yard management'
-                  : 'Direct delivery of cement, TMT, sand, and aggregates in Bihar'}
+                  ? 'Access your site deliveries, saved addresses, and Bahi-Khata ledger'
+                  : 'Direct delivery of cement, TMT steel, sand, and bricks across Bihar'}
               </p>
             </div>
           </div>
@@ -111,7 +114,7 @@ export const AuthModal: React.FC = () => {
               setAuthModalMode('LOGIN');
               setError(null);
             }}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all ${
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
               authModalMode === 'LOGIN'
                 ? 'bg-white text-stone-900 shadow-xs'
                 : 'text-stone-600 hover:text-stone-900'
@@ -125,13 +128,13 @@ export const AuthModal: React.FC = () => {
               setAuthModalMode('REGISTER');
               setError(null);
             }}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all ${
+            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
               authModalMode === 'REGISTER'
                 ? 'bg-white text-stone-900 shadow-xs'
                 : 'text-stone-600 hover:text-stone-900'
             }`}
           >
-            New Customer
+            New Buyer Account
           </button>
         </div>
 
@@ -156,7 +159,7 @@ export const AuthModal: React.FC = () => {
                 </span>
                 <input
                   type="tel"
-                  placeholder="9876543210"
+                  placeholder="Enter 10-digit mobile number"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
                   required
@@ -181,7 +184,7 @@ export const AuthModal: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -193,41 +196,43 @@ export const AuthModal: React.FC = () => {
               disabled={isLoading || phone.length < 10 || !password}
               className="w-full py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs shadow-xs disabled:opacity-50 transition-all cursor-pointer"
             >
-              {isLoading ? 'Signing In...' : 'Sign In to Portal'}
+              {isLoading ? 'Signing In...' : 'Sign In'}
             </button>
 
-            {/* Quick Demo Credentials Assistant */}
-            <div className="pt-2 border-t border-stone-200">
-              <span className="text-[10px] font-mono text-stone-400 uppercase tracking-wider block mb-1.5">
-                Quick Test Credentials (Pre-seeded)
-              </span>
-              <div className="grid grid-cols-3 gap-1.5 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => fillQuickDemo('9123456789', 'customer123')}
-                  className="p-1.5 rounded-md border border-stone-200 bg-stone-50 hover:bg-stone-100 text-left cursor-pointer"
-                >
-                  <div className="font-semibold text-stone-800">Customer</div>
-                  <div className="font-mono text-[9px] text-stone-500">Ravi Kumar</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fillQuickDemo('9876543210', 'supplier123')}
-                  className="p-1.5 rounded-md border border-stone-200 bg-stone-50 hover:bg-stone-100 text-left cursor-pointer"
-                >
-                  <div className="font-semibold text-stone-800">Dealer Yard</div>
-                  <div className="font-mono text-[9px] text-stone-500">Gupta Materials</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fillQuickDemo('9999999999', 'admin123')}
-                  className="p-1.5 rounded-md border border-stone-200 bg-stone-50 hover:bg-stone-100 text-left cursor-pointer"
-                >
-                  <div className="font-semibold text-stone-800">Admin</div>
-                  <div className="font-mono text-[9px] text-stone-500">Platform Ops</div>
-                </button>
+            {/* Quick Demo Credentials Assistant — Strictly hidden in production unless Demo Mode is enabled */}
+            {isDemoMode && (
+              <div className="pt-2 border-t border-stone-200">
+                <span className="text-[10px] font-mono text-stone-400 uppercase tracking-wider block mb-1.5">
+                  Sandbox Test Credentials
+                </span>
+                <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => fillQuickDemo('9123456789', 'customer123')}
+                    className="p-1.5 rounded-md border border-stone-200 bg-stone-50 hover:bg-stone-100 text-left cursor-pointer"
+                  >
+                    <div className="font-semibold text-stone-800">Customer</div>
+                    <div className="font-mono text-[9px] text-stone-500">Ravi Kumar</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fillQuickDemo('9876543210', 'supplier123')}
+                    className="p-1.5 rounded-md border border-stone-200 bg-stone-50 hover:bg-stone-100 text-left cursor-pointer"
+                  >
+                    <div className="font-semibold text-stone-800">Dealer Yard</div>
+                    <div className="font-mono text-[9px] text-stone-500">Gupta Materials</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fillQuickDemo('9999999999', 'admin123')}
+                    className="p-1.5 rounded-md border border-stone-200 bg-stone-50 hover:bg-stone-100 text-left cursor-pointer"
+                  >
+                    <div className="font-semibold text-stone-800">Admin</div>
+                    <div className="font-mono text-[9px] text-stone-500">Platform Ops</div>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </form>
         )}
 
@@ -288,7 +293,7 @@ export const AuthModal: React.FC = () => {
 
             <div>
               <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Password
+                Create Password
               </label>
               <input
                 type="password"
@@ -354,4 +359,3 @@ export const AuthModal: React.FC = () => {
     </div>
   );
 };
-

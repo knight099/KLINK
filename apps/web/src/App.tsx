@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './lib/auth-context';
 import { DistrictProvider } from './lib/district-context';
 import { CartProvider } from './lib/cart-context';
+import { getAppMode } from './lib/api';
 import { Navbar } from './components/Navbar';
 import { BottomNav } from './components/BottomNav';
 import { CartDrawer } from './components/CartDrawer';
@@ -11,13 +12,15 @@ import { AdminPortal } from './views/AdminPortal';
 import { ForcePasswordChangeModal } from './components/ForcePasswordChangeModal';
 import { AuthModal } from './components/AuthModal';
 import { useNavigationHistory } from './lib/useNavigationHistory';
-import { CheckCircle2, X } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 
 export function AppContent() {
   const { user, switchPersona, isDemoMode } = useAuth();
   const { navState, updateNav } = useNavigationHistory();
+  const appMode = getAppMode();
+
   const {
-    tab: currentTab,
+    tab: navTab,
     customerSubTab,
     supplierSubTab,
     adminSubTab,
@@ -26,9 +29,20 @@ export function AppContent() {
     compareId
   } = navState;
 
+  // Enforce strict role/portal isolation when running in a dedicated app mode
+  const currentTab: 'customer' | 'supplier' | 'admin' =
+    appMode === 'CUSTOMER'
+      ? 'customer'
+      : appMode === 'SUPPLIER'
+      ? 'supplier'
+      : appMode === 'ADMIN'
+      ? 'admin'
+      : navTab;
+
   const [successOrder, setSuccessOrder] = useState<any | null>(null);
 
   const setCurrentTab = (tab: 'customer' | 'supplier' | 'admin') => {
+    if (appMode !== 'UNIFIED') return;
     updateNav({ tab, yardId: null, compareId: null });
   };
 
@@ -71,7 +85,13 @@ export function AppContent() {
 
   const handleOrderSuccess = (order: any) => {
     setSuccessOrder(order);
-    updateNav({ tab: 'customer', customerSubTab: 'orders', isCartOpen: false, yardId: null, compareId: null });
+    updateNav({
+      tab: 'customer',
+      customerSubTab: 'orders',
+      isCartOpen: false,
+      yardId: null,
+      compareId: null
+    });
   };
 
   return (
@@ -112,12 +132,14 @@ export function AppContent() {
         )}
       </main>
 
-      {/* Slide-over Cart Drawer */}
-      <CartDrawer
-        isOpen={isCartOpen}
-        onClose={() => setIsCartOpen(false)}
-        onOrderSuccess={handleOrderSuccess}
-      />
+      {/* Slide-over Cart Drawer (Customer Marketplace only) */}
+      {currentTab === 'customer' && (
+        <CartDrawer
+          isOpen={isCartOpen}
+          onClose={() => setIsCartOpen(false)}
+          onOrderSuccess={handleOrderSuccess}
+        />
+      )}
 
       {/* Mobile Bottom Navigation */}
       <BottomNav
@@ -132,10 +154,10 @@ export function AppContent() {
         onOpenCart={() => setIsCartOpen(true)}
       />
 
-      {/* Global B2B Authentication Modal */}
-      <AuthModal />
+      {/* Customer Authentication Modal */}
+      {currentTab === 'customer' && <AuthModal />}
 
-      {/* Force Password Change Modal for 1st-time Supplier Logins */}
+      {/* Force Password Change Modal for 1st-time Logins */}
       <ForcePasswordChangeModal />
 
       {/* Order Success Toast / Modal */}
@@ -181,4 +203,3 @@ export function App() {
 }
 
 export default App;
-

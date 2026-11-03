@@ -15,10 +15,11 @@ export const storageRoutes: FastifyPluginAsyncZod = async (fastify) => {
     };
   });
 
-  // Get presigned upload URL for uploads (e.g. vehicle photos, delivery challans)
+  // Get presigned upload URL for uploads (e.g. vehicle photos, delivery challans) — Requires authenticated user
   fastify.post(
     '/presign-upload',
     {
+      onRequest: [fastify.authenticate],
       schema: {
         body: z.object({
           filename: z.string().min(1),
@@ -44,34 +45,45 @@ export const storageRoutes: FastifyPluginAsyncZod = async (fastify) => {
     }
   );
 
-  // List stored objects
-  fastify.get('/list', async (request) => {
-    const query = request.query as { prefix?: string };
-    const objects = await storageService.listObjects(query?.prefix);
-    return {
-      bucket: storageService.getBucketName(),
-      count: objects.length,
-      objects: objects.map((obj: any) => ({
-        key: obj.Key,
-        size: obj.Size,
-        lastModified: obj.LastModified
-      }))
-    };
-  });
+  // List stored objects — Admin only
+  fastify.get(
+    '/list',
+    {
+      onRequest: [fastify.requireRole('ADMIN')]
+    },
+    async (request) => {
+      const query = request.query as { prefix?: string };
+      const objects = await storageService.listObjects(query?.prefix);
+      return {
+        bucket: storageService.getBucketName(),
+        count: objects.length,
+        objects: objects.map((obj: any) => ({
+          key: obj.Key,
+          size: obj.Size,
+          lastModified: obj.LastModified
+        }))
+      };
+    }
+  );
 
-  // Test direct upload to Neon Object Storage
-  fastify.post('/test-upload', async () => {
-    const testContent = Buffer.from(`KLINK Neon Object Storage Verification - ${new Date().toISOString()}`);
-    const testKey = `test/ping-${Date.now()}.txt`;
-    await storageService.uploadBuffer(testKey, testContent, 'text/plain');
+  // Test direct upload to Neon Object Storage — Admin only
+  fastify.post(
+    '/test-upload',
+    {
+      onRequest: [fastify.requireRole('ADMIN')]
+    },
+    async () => {
+      const testContent = Buffer.from(`KLINK Neon Object Storage Verification - ${new Date().toISOString()}`);
+      const testKey = `test/ping-${Date.now()}.txt`;
+      await storageService.uploadBuffer(testKey, testContent, 'text/plain');
 
-    const downloadUrl = await storageService.getPresignedDownloadUrl(testKey, 1800);
-    return {
-      status: 'ok',
-      message: 'Successfully wrote test file to Neon Object Storage',
-      key: testKey,
-      downloadUrl
-    };
-  });
+      const downloadUrl = await storageService.getPresignedDownloadUrl(testKey, 1800);
+      return {
+        status: 'ok',
+        message: 'Successfully wrote test file to Neon Object Storage',
+        key: testKey,
+        downloadUrl
+      };
+    }
+  );
 };
-

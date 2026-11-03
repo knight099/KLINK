@@ -60,11 +60,24 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
   const [deliveryFilter, setDeliveryFilter] = useState<'ALL' | 'READY' | 'ON_ROAD' | 'DELIVERED'>('ALL');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Dealer Direct Login State
-  const [dealerPhone, setDealerPhone] = useState('9876543210');
+  // Dealer Direct Login & Self-Registration State
+  const [dealerAuthTab, setDealerAuthTab] = useState<'LOGIN' | 'APPLY'>('LOGIN');
+  const [dealerPhone, setDealerPhone] = useState('');
   const [dealerPass, setDealerPass] = useState('');
   const [dealerLoginError, setDealerLoginError] = useState<string | null>(null);
   const [isDealerLoggingIn, setIsDealerLoggingIn] = useState(false);
+
+  // Self-Onboarding Application State
+  const [applyBusinessName, setApplyBusinessName] = useState('');
+  const [applyOwnerName, setApplyOwnerName] = useState('');
+  const [applyPhone, setApplyPhone] = useState('');
+  const [applyPassword, setApplyPassword] = useState('');
+  const [applyDistrictId, setApplyDistrictId] = useState('');
+  const [applyAddress, setApplyAddress] = useState('');
+  const [applyGstin, setApplyGstin] = useState('');
+  const [applyDescription, setApplyDescription] = useState('');
+  const [applySuccessMessage, setApplySuccessMessage] = useState<string | null>(null);
+  const [isSubmittingApplication, setIsSubmittingApplication] = useState(false);
 
   // Supplier Profile state
   const [supplierProfile, setSupplierProfile] = useState<any>(null);
@@ -673,7 +686,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
     setDealerLoginError(null);
     setIsDealerLoggingIn(true);
     try {
-      await login(dealerPhone.trim(), dealerPass);
+      await login(dealerPhone.trim(), dealerPass, 'SUPPLIER');
     } catch (err: any) {
       setDealerLoginError(err?.message || 'Invalid dealer mobile or password');
     } finally {
@@ -681,19 +694,85 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
     }
   };
 
+  const handleDealerApply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDealerLoginError(null);
+    setApplySuccessMessage(null);
+    setIsSubmittingApplication(true);
+    try {
+      const targetDistrict = applyDistrictId || districts[0]?.id;
+      if (!targetDistrict) {
+        throw new Error('Please select a primary yard district');
+      }
+      const res = await apiFetch<{ message: string; supplierId: string }>('/auth/onboard-supplier', {
+        method: 'POST',
+        body: JSON.stringify({
+          phone: applyPhone.trim(),
+          password: applyPassword,
+          businessName: applyBusinessName.trim(),
+          ownerName: applyOwnerName.trim(),
+          districtId: targetDistrict,
+          address: applyAddress.trim(),
+          gstin: applyGstin.trim() || undefined,
+          description: applyDescription.trim() || undefined
+        })
+      });
+      setApplySuccessMessage(
+        res.message || 'Yard registration submitted! Our operations team will verify and activate your dealer account.'
+      );
+    } catch (err: any) {
+      setDealerLoginError(err?.message || 'Failed to submit yard registration');
+    } finally {
+      setIsSubmittingApplication(false);
+    }
+  };
+
   // Auth gate for Production Mode
   if (!user || user.role !== 'SUPPLIER') {
     return (
       <div className="min-h-[75vh] flex items-center justify-center p-4">
-        <div className="bg-white rounded-xl max-w-sm w-full p-6 space-y-4 shadow-xl border border-stone-200 animate-in zoom-in-95 duration-150">
+        <div className="bg-white rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl border border-stone-200 animate-in zoom-in-95 duration-150">
           <div className="flex items-center space-x-2.5 border-b border-stone-200 pb-3">
             <div className="p-2 rounded-lg bg-stone-900 text-white">
               <Store className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="font-semibold text-sm text-stone-900">Supplier Yard Operating System</h2>
-              <p className="text-xs text-stone-500">Authorized Dealer & Yard Gate Access</p>
+              <h2 className="font-semibold text-sm text-stone-900">KLINK Partner — Yard OS</h2>
+              <p className="text-xs text-stone-500">Authorized Dealer & Logistics Yard Portal</p>
             </div>
+          </div>
+
+          {/* Toggle between Dealer Sign In and Apply as Dealer Yard */}
+          <div className="flex p-0.5 bg-stone-100 rounded-lg border border-stone-200">
+            <button
+              type="button"
+              onClick={() => {
+                setDealerAuthTab('LOGIN');
+                setDealerLoginError(null);
+                setApplySuccessMessage(null);
+              }}
+              className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                dealerAuthTab === 'LOGIN'
+                  ? 'bg-white text-stone-900 shadow-xs'
+                  : 'text-stone-600 hover:text-stone-900'
+              }`}
+            >
+              Dealer Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDealerAuthTab('APPLY');
+                setDealerLoginError(null);
+              }}
+              className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                dealerAuthTab === 'APPLY'
+                  ? 'bg-white text-stone-900 shadow-xs'
+                  : 'text-stone-600 hover:text-stone-900'
+              }`}
+            >
+              Register New Yard
+            </button>
           </div>
 
           {dealerLoginError && (
@@ -702,53 +781,185 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
             </div>
           )}
 
-          <form onSubmit={handleDealerLogin} className="space-y-3.5">
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Dealer Mobile Phone
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-semibold text-stone-400">
-                  +91
-                </span>
+          {applySuccessMessage && (
+            <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-1">
+              <div className="font-semibold">Application Received</div>
+              <p>{applySuccessMessage}</p>
+            </div>
+          )}
+
+          {dealerAuthTab === 'LOGIN' ? (
+            <form onSubmit={handleDealerLogin} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Dealer Mobile Phone
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-semibold text-stone-400">
+                    +91
+                  </span>
+                  <input
+                    type="tel"
+                    placeholder="Enter 10-digit registered mobile"
+                    value={dealerPhone}
+                    onChange={(e) => setDealerPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    required
+                    className="w-full pl-11 pr-3 py-2 text-xs font-mono font-semibold text-stone-900 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Password
+                </label>
                 <input
-                  type="tel"
-                  value={dealerPhone}
-                  onChange={(e) => setDealerPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  type="password"
+                  placeholder="Enter yard password"
+                  value={dealerPass}
+                  onChange={(e) => setDealerPass(e.target.value)}
                   required
-                  className="w-full pl-11 pr-3 py-2 text-xs font-mono font-semibold text-stone-900 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                  className="w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
                 />
               </div>
-            </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Password
-              </label>
-              <input
-                type="password"
-                placeholder="Enter yard password"
-                value={dealerPass}
-                onChange={(e) => setDealerPass(e.target.value)}
-                required
-                className="w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
-              />
-            </div>
+              <button
+                type="submit"
+                disabled={isDealerLoggingIn || dealerPhone.length < 10 || !dealerPass}
+                className="w-full py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs shadow-xs disabled:opacity-50 transition-all cursor-pointer"
+              >
+                {isDealerLoggingIn ? 'Verifying Yard Credentials...' : 'Sign In to Yard OS'}
+              </button>
 
-            <button
-              type="submit"
-              disabled={isDealerLoggingIn || dealerPhone.length < 10 || !dealerPass}
-              className="w-full py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs shadow-xs disabled:opacity-50 transition-all cursor-pointer"
-            >
-              {isDealerLoggingIn ? 'Verifying Yard Credentials...' : 'Sign In to Yard OS'}
-            </button>
+              {isDemoMode && (
+                <div className="pt-2 border-t border-stone-200 text-center">
+                  <span className="text-[11px] text-stone-500">
+                    Sandbox dealer: <strong className="font-mono text-stone-700">9876543210 / supplier123</strong>
+                  </span>
+                </div>
+              )}
+            </form>
+          ) : (
+            <form onSubmit={handleDealerApply} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Yard / Firm Business Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Mithila Steels & Building Materials"
+                  value={applyBusinessName}
+                  onChange={(e) => setApplyBusinessName(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                />
+              </div>
 
-            <div className="pt-2 border-t border-stone-200 text-center">
-              <span className="text-[11px] text-stone-500">
-                Sample dealer: <strong className="font-mono text-stone-700">9876543210 / supplier123</strong>
-              </span>
-            </div>
-          </form>
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                    Proprietor / Owner Name
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Owner Full Name"
+                    value={applyOwnerName}
+                    onChange={(e) => setApplyOwnerName(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                    10-Digit Mobile
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="9876543210"
+                    value={applyPhone}
+                    onChange={(e) => setApplyPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    required
+                    className="w-full px-3 py-2 text-xs font-mono border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                    Primary District
+                  </label>
+                  <select
+                    value={applyDistrictId || districts[0]?.id || ''}
+                    onChange={(e) => setApplyDistrictId(e.target.value)}
+                    className="w-full px-2.5 py-2 text-xs border border-stone-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-stone-900"
+                  >
+                    {districts.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                    GSTIN (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="10AAAAA0000A1Z5"
+                    value={applyGstin}
+                    onChange={(e) => setApplyGstin(e.target.value.toUpperCase())}
+                    className="w-full px-3 py-2 text-xs font-mono border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Yard Depot Address
+                </label>
+                <input
+                  type="text"
+                  placeholder="Full yard address & landmark"
+                  value={applyAddress}
+                  onChange={(e) => setApplyAddress(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Create Account Password
+                </label>
+                <input
+                  type="password"
+                  placeholder="Min 6 characters"
+                  value={applyPassword}
+                  onChange={(e) => setApplyPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  className="w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={
+                  isSubmittingApplication ||
+                  !applyBusinessName ||
+                  !applyOwnerName ||
+                  applyPhone.length < 10 ||
+                  applyPassword.length < 6 ||
+                  !applyAddress
+                }
+                className="w-full py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs shadow-xs disabled:opacity-50 transition-all cursor-pointer"
+              >
+                {isSubmittingApplication ? 'Submitting Yard Application...' : 'Submit Dealer Yard Application'}
+              </button>
+            </form>
+          )}
         </div>
       </div>
     );

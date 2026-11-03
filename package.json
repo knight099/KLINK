@@ -6,8 +6,11 @@
   "scripts": {
     "dev": "pnpm --parallel -r run dev",
     "dev:api": "pnpm --filter @klink/api run dev",
+    "dev:market": "pnpm --filter @klink/marketplace-web run dev",
+    "dev:partner": "pnpm --filter @klink/partner-web run dev",
+    "dev:admin": "pnpm --filter @klink/admin-web run dev",
     "dev:web": "pnpm --filter @klink/web run dev",
-    "build": "pnpm -r run build",
+    "build": "pnpm --filter @klink/shared-types run build && pnpm --filter @klink/database run build && pnpm --filter @klink/api run build && pnpm --filter @klink/marketplace-web run build && pnpm --filter @klink/partner-web run build && pnpm --filter @klink/admin-web run build && pnpm --filter @klink/web run build",
     "build:turbo": "turbo run build",
     "lint": "turbo run lint",
     "type-check": "pnpm -r run type-check",

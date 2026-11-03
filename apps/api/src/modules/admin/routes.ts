@@ -39,7 +39,7 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
           _count: { id: true }
         }),
         fastify.prisma.district.findMany({
-          where: { isActive: true },
+          orderBy: { name: 'asc' },
           include: {
             _count: { select: { suppliers: true, orders: true } }
           }
@@ -917,7 +917,7 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
           where: {
             supplierId: payment.supplierId,
             customerId: payment.customerId,
-            status: { notIn: ['REJECTED', 'CANCELLED'] }
+            status: { notIn: ['PENDING_APPROVAL', 'REJECTED', 'CANCELLED'] }
           },
           _sum: { finalTotal: true }
         });

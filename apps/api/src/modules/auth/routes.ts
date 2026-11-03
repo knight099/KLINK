@@ -16,7 +16,7 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
     {
       schema: {
         tags: ['Auth'],
-        summary: 'Login with phone and password',
+        summary: 'Login with phone, password, and optional application role check',
         body: LoginInputSchema,
         response: {
           200: z.object({
@@ -37,7 +37,7 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
       }
     },
     async (request, reply) => {
-      const { phone, password } = request.body;
+      const { phone, password, role: expectedRole } = request.body;
 
       const user = await fastify.prisma.user.findUnique({
         where: { phone },
@@ -54,6 +54,23 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const isMatch = await bcrypt.compare(password, user.passwordHash);
       if (!isMatch) {
         return reply.status(401).send({ error: 'Invalid phone or password' });
+      }
+
+      // Enforce application role isolation when a specific app role is requested
+      if (expectedRole && user.role !== expectedRole) {
+        if (expectedRole === 'SUPPLIER' && user.role === 'CUSTOMER') {
+          return reply.status(403).send({
+            error: 'This mobile number is registered as a Buyer account. Please sign in on the Customer Marketplace or apply as a Dealer Yard.'
+          });
+        }
+        if (expectedRole === 'CUSTOMER' && user.role === 'SUPPLIER') {
+          return reply.status(403).send({
+            error: 'This mobile number is registered as a Dealer Yard account. Please sign in on the KLINK Partner (Yard OS) portal.'
+          });
+        }
+        return reply.status(403).send({
+          error: `Access denied: This account (${user.role}) is not authorized for the ${expectedRole} application.`
+        });
       }
 
       let name = 'User';
@@ -129,15 +146,11 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
 
       const passwordHash = await bcrypt.hash(newPassword, 10);
 
-      const updatedUser = await fastify.prisma.user.update({
+      await fastify.prisma.user.update({
         where: { id: userId },
         data: {
           passwordHash,
           mustChangePassword: false
-        },
-        include: {
-          supplier: true,
-          customer: true
         }
       });
 
@@ -156,13 +169,13 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
     }
   );
 
-  // Register Customer
+  // Register Customer (also supports claiming a walk-in customer profile created by a dealer yard)
   fastify.post(
     '/register-customer',
     {
       schema: {
         tags: ['Auth'],
-        summary: 'Register a new customer account',
+        summary: 'Register a new customer account or claim an existing walk-in customer account',
         body: RegisterCustomerInputSchema,
         response: {
           201: z.object({
@@ -176,17 +189,64 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
     async (request, reply) => {
       const { phone, password, fullName, districtId, addressLine, landmark, pincode } = request.body;
 
-      const existing = await fastify.prisma.user.findUnique({ where: { phone } });
-      if (existing) {
-        return reply.status(400).send({ error: 'Phone number already registered' });
-      }
-
       const district = await fastify.prisma.district.findUnique({ where: { id: districtId } });
       if (!district) {
         return reply.status(400).send({ error: 'Invalid district ID' });
       }
 
+      const existing = await fastify.prisma.user.findUnique({
+        where: { phone },
+        include: { customer: true }
+      });
+
       const passwordHash = await bcrypt.hash(password, 10);
+
+      // If this phone number was previously created as a walk-in customer by a supplier yard (mustChangePassword === true), allow claiming it
+      if (existing) {
+        if (existing.role === 'CUSTOMER' && existing.mustChangePassword && existing.customer) {
+          const updatedUser = await fastify.prisma.user.update({
+            where: { id: existing.id },
+            data: {
+              passwordHash,
+              mustChangePassword: false,
+              customer: {
+                update: {
+                  fullName,
+                  defaultDistrictId: districtId,
+                  ...(addressLine
+                    ? {
+                        addresses: {
+                          create: {
+                            districtId,
+                            addressLine,
+                            landmark,
+                            pincode,
+                            isDefault: true
+                          }
+                        }
+                      }
+                    : {})
+                }
+              }
+            },
+            include: { customer: true }
+          });
+
+          const payload = {
+            id: updatedUser.id,
+            phone: updatedUser.phone,
+            role: 'CUSTOMER' as const,
+            name: fullName,
+            customerId: updatedUser.customer?.id,
+            mustChangePassword: false
+          };
+
+          const token = fastify.jwt.sign(payload, { expiresIn: '30d' });
+          return reply.status(201).send({ token, user: payload });
+        }
+
+        return reply.status(400).send({ error: 'Phone number already registered. Please sign in instead.' });
+      }
 
       const user = await fastify.prisma.user.create({
         data: {
@@ -257,6 +317,11 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const existing = await fastify.prisma.user.findUnique({ where: { phone } });
       if (existing) {
         return reply.status(400).send({ error: 'Phone number already registered' });
+      }
+
+      const district = await fastify.prisma.district.findUnique({ where: { id: districtId } });
+      if (!district) {
+        return reply.status(400).send({ error: 'Invalid district selected' });
       }
 
       const passwordHash = await bcrypt.hash(password, 10);

@@ -5,6 +5,7 @@ export interface District {
   id: string;
   code: string;
   name: string;
+  isActive?: boolean;
   state: { code: string; name: string };
   _count?: { suppliers: number };
 }
@@ -67,4 +68,3 @@ export const useDistrict = () => {
   if (!context) throw new Error('useDistrict must be used within a DistrictProvider');
   return context;
 };
-

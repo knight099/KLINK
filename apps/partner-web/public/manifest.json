@@ -1,0 +1,17 @@
+{
+  "name": "KLINK Partner — Yard OS",
+  "short_name": "KLINK Partner",
+  "description": "Supplier Yard Operating System for KLINK Authorized Dealers",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAF9F6",
+  "theme_color": "#141413",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

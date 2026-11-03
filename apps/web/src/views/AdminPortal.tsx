@@ -52,7 +52,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
   const [brands, setBrands] = useState<any[]>([]);
 
   // Admin Direct Login State
-  const [adminPhone, setAdminPhone] = useState('9999999999');
+  const [adminPhone, setAdminPhone] = useState('');
   const [adminPass, setAdminPass] = useState('');
   const [adminLoginError, setAdminLoginError] = useState<string | null>(null);
   const [isAdminLoggingIn, setIsAdminLoggingIn] = useState(false);
@@ -698,7 +698,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
     setAdminLoginError(null);
     setIsAdminLoggingIn(true);
     try {
-      await login(adminPhone.trim(), adminPass);
+      await login(adminPhone.trim(), adminPass, 'ADMIN');
     } catch (err: any) {
       setAdminLoginError(err?.message || 'Invalid administrator phone or password');
     } finally {
@@ -716,8 +716,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               <Shield className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="font-semibold text-sm text-stone-900">Platform Super Admin</h2>
-              <p className="text-xs text-stone-500">Central Exchange Operations Console</p>
+              <h2 className="font-semibold text-sm text-stone-900">KLINK Central Admin</h2>
+              <p className="text-xs text-stone-500">Platform Operations & Control Tower</p>
             </div>
           </div>
 
@@ -738,6 +738,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                 </span>
                 <input
                   type="tel"
+                  placeholder="Enter authorized admin mobile"
                   value={adminPhone}
                   onChange={(e) => setAdminPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
                   required
@@ -765,14 +766,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               disabled={isAdminLoggingIn || adminPhone.length < 10 || !adminPass}
               className="w-full py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs shadow-xs disabled:opacity-50 transition-all cursor-pointer"
             >
-              {isAdminLoggingIn ? 'Authenticating...' : 'Sign In as Platform Super Admin'}
+              {isAdminLoggingIn ? 'Authenticating...' : 'Sign In to Admin Console'}
             </button>
 
-            <div className="pt-2 border-t border-stone-200 text-center">
-              <span className="text-[11px] text-stone-500">
-                Default seed admin: <strong className="font-mono text-stone-700">9999999999 / admin123</strong>
-              </span>
-            </div>
+            {isDemoMode && (
+              <div className="pt-2 border-t border-stone-200 text-center">
+                <span className="text-[11px] text-stone-500">
+                  Sandbox admin: <strong className="font-mono text-stone-700">9999999999 / admin123</strong>
+                </span>
+              </div>
+            )}
           </form>
         </div>
       </div>

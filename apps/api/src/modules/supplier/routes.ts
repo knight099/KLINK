@@ -853,6 +853,7 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
                 phone: customerPhone,
                 passwordHash: tempPasswordHash,
                 role: 'CUSTOMER',
+                mustChangePassword: true, // Marks account as claimable on Customer Marketplace registration
                 customer: {
                   create: {
                     fullName: customerName,
@@ -890,8 +891,17 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
           }
         }
 
-        // Deduct stock for all items
+        // Verify and deduct stock for all items
         for (const item of items) {
+          const sp = await tx.supplierProduct.findUnique({
+            where: { id: item.supplierProductId },
+            include: { masterProduct: true }
+          });
+          if (!sp || sp.stockQuantity < item.quantity) {
+            throw fastify.httpErrors.badRequest(
+              `Insufficient yard stock for ${sp?.masterProduct?.name || 'selected item'}. Available: ${sp?.stockQuantity || 0}, Required: ${item.quantity}`
+            );
+          }
           await tx.supplierProduct.update({
             where: { id: item.supplierProductId },
             data: { stockQuantity: { decrement: item.quantity } }

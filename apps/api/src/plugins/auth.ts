@@ -1,4 +1,5 @@
 import fp from 'fastify-plugin';
+import crypto from 'crypto';
 import { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import fastifyJwt from '@fastify/jwt';
 import { AuthTokenPayload, UserRole } from '@klink/shared-types';
@@ -17,7 +18,12 @@ declare module '@fastify/jwt' {
 }
 
 export const authPlugin: FastifyPluginAsync = fp(async (fastify) => {
-  const jwtSecret = process.env.JWT_SECRET || 'klink-darbhanga-secret-key-super-secure-2026';
+  // Use explicit JWT_SECRET or derive a cryptographic secret from private environment credentials
+  const jwtSecret =
+    process.env.JWT_SECRET ||
+    (process.env.DATABASE_URL
+      ? crypto.createHmac('sha256', 'klink-jwt-signing-key').update(process.env.DATABASE_URL).digest('hex')
+      : 'klink-darbhanga-secret-key-super-secure-2026');
 
   await fastify.register(fastifyJwt, {
     secret: jwtSecret
@@ -50,11 +56,12 @@ export const authPlugin: FastifyPluginAsync = fp(async (fastify) => {
           });
 
           if (!supplier || supplier.status !== 'ACTIVE') {
-            const statusLabel = supplier?.status === 'PENDING_APPROVAL'
-              ? 'pending administrator verification'
-              : supplier?.status === 'SUSPENDED'
-              ? 'suspended'
-              : 'inactive';
+            const statusLabel =
+              supplier?.status === 'PENDING_APPROVAL'
+                ? 'pending administrator verification'
+                : supplier?.status === 'SUSPENDED'
+                ? 'suspended'
+                : 'inactive';
             return reply.status(403).send({
               error: `Forbidden: Your yard account (${supplier?.businessName || 'Supplier'}) is currently ${statusLabel}.`
             });
@@ -66,4 +73,3 @@ export const authPlugin: FastifyPluginAsync = fp(async (fastify) => {
     };
   });
 });
-
