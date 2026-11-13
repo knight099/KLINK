@@ -109,10 +109,11 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
         name,
         supplierId,
         customerId,
-        mustChangePassword: user.mustChangePassword
+        mustChangePassword: user.mustChangePassword,
+        sessionVersion: user.sessionVersion
       };
 
-      const token = fastify.jwt.sign(payload, { expiresIn: '30d' });
+      const token = fastify.jwt.sign(payload, { expiresIn: '12h' });
 
       return {
         token,
@@ -146,20 +147,21 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
 
       const passwordHash = await bcrypt.hash(newPassword, 10);
 
-      await fastify.prisma.user.update({
-        where: { id: userId },
+      const updatedUser = await fastify.prisma.user.update({
+        where: { id: userId, sessionVersion: request.user.sessionVersion },
         data: {
           passwordHash,
-          mustChangePassword: false
+          mustChangePassword: false,
+          sessionVersion: { increment: 1 }
         }
       });
 
-      const payload = {
-        ...request.user,
-        mustChangePassword: false
-      };
+      // Rebuild claims: never carry an old exp/iat into a newly signed token.
+      const { id, phone, role, name, supplierId, customerId } = request.user;
+      const payload = { id, phone, role, name, supplierId, customerId,
+        mustChangePassword: false, sessionVersion: updatedUser.sessionVersion };
 
-      const token = fastify.jwt.sign(payload, { expiresIn: '30d' });
+      const token = fastify.jwt.sign(payload, { expiresIn: '12h' });
 
       return {
         message: 'Password changed successfully',
@@ -175,7 +177,7 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
     {
       schema: {
         tags: ['Auth'],
-        summary: 'Register a new customer account or claim an existing walk-in customer account',
+        summary: 'Register a new customer account',
         body: RegisterCustomerInputSchema,
         response: {
           201: z.object({
@@ -190,7 +192,7 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const { phone, password, fullName, districtId, addressLine, landmark, pincode } = request.body;
 
       const district = await fastify.prisma.district.findUnique({ where: { id: districtId } });
-      if (!district) {
+      if (!district || !district.isActive) {
         return reply.status(400).send({ error: 'Invalid district ID' });
       }
 
@@ -201,51 +203,10 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
 
       const passwordHash = await bcrypt.hash(password, 10);
 
-      // If this phone number was previously created as a walk-in customer by a supplier yard (mustChangePassword === true), allow claiming it
+      // Phone knowledge is not proof of ownership. Recovery is administrator-assisted
+      // until a verified phone challenge is implemented.
       if (existing) {
-        if (existing.role === 'CUSTOMER' && existing.mustChangePassword && existing.customer) {
-          const updatedUser = await fastify.prisma.user.update({
-            where: { id: existing.id },
-            data: {
-              passwordHash,
-              mustChangePassword: false,
-              customer: {
-                update: {
-                  fullName,
-                  defaultDistrictId: districtId,
-                  ...(addressLine
-                    ? {
-                        addresses: {
-                          create: {
-                            districtId,
-                            addressLine,
-                            landmark,
-                            pincode,
-                            isDefault: true
-                          }
-                        }
-                      }
-                    : {})
-                }
-              }
-            },
-            include: { customer: true }
-          });
-
-          const payload = {
-            id: updatedUser.id,
-            phone: updatedUser.phone,
-            role: 'CUSTOMER' as const,
-            name: fullName,
-            customerId: updatedUser.customer?.id,
-            mustChangePassword: false
-          };
-
-          const token = fastify.jwt.sign(payload, { expiresIn: '30d' });
-          return reply.status(201).send({ token, user: payload });
-        }
-
-        return reply.status(400).send({ error: 'Phone number already registered. Please sign in instead.' });
+        return reply.status(400).send({ error: 'Phone number already registered. Sign in or contact support for verified account recovery.' });
       }
 
       const user = await fastify.prisma.user.create({
@@ -282,10 +243,11 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
         role: 'CUSTOMER' as const,
         name: fullName,
         customerId: user.customer?.id,
+        sessionVersion: user.sessionVersion,
         mustChangePassword: false
       };
 
-      const token = fastify.jwt.sign(payload, { expiresIn: '30d' });
+      const token = fastify.jwt.sign(payload, { expiresIn: '12h' });
 
       return reply.status(201).send({
         token,
@@ -320,7 +282,7 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
       }
 
       const district = await fastify.prisma.district.findUnique({ where: { id: districtId } });
-      if (!district) {
+      if (!district || !district.isActive) {
         return reply.status(400).send({ error: 'Invalid district selected' });
       }
 

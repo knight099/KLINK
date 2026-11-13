@@ -37,25 +37,25 @@ export const SupplierProductSchema = z.object({
   id: z.string(),
   supplierId: z.string(),
   masterProductId: z.string(),
-  sellingPrice: z.number().positive('Price must be greater than 0'),
+  sellingPrice: z.number().finite().max(1_000_000_000).positive('Price must be greater than 0'),
   unit: UnitEnum,
-  stockQuantity: z.number().min(0),
+  stockQuantity: z.number().finite().max(1_000_000_000).min(0),
   minOrderQty: z.number().min(1).default(1),
-  deliveryCharge: z.number().min(0).default(0),
+  deliveryCharge: z.number().finite().max(1_000_000_000).min(0).default(0),
   isAvailable: z.boolean().default(true),
-  lowStockThreshold: z.number().min(0).default(10),
+  lowStockThreshold: z.number().finite().max(1_000_000_000).min(0).default(10),
   masterProduct: MasterProductSchema.optional()
 });
 export type SupplierProduct = z.infer<typeof SupplierProductSchema>;
 
 export const AddSupplierProductInputSchema = z.object({
   masterProductId: z.string(),
-  sellingPrice: z.number().positive(),
+  sellingPrice: z.number().finite().max(1_000_000_000).positive(),
   unit: UnitEnum,
-  stockQuantity: z.number().min(0),
+  stockQuantity: z.number().finite().max(1_000_000_000).min(0),
   minOrderQty: z.number().min(1).default(1),
-  deliveryCharge: z.number().min(0).default(0),
-  lowStockThreshold: z.number().min(0).default(10)
+  deliveryCharge: z.number().finite().max(1_000_000_000).min(0).default(0),
+  lowStockThreshold: z.number().finite().max(1_000_000_000).min(0).default(10)
 });
 export type AddSupplierProductInput = z.infer<typeof AddSupplierProductInputSchema>;
 
@@ -91,11 +91,11 @@ export const UpdateSupplierVehicleInputSchema = z.object({
 export type UpdateSupplierVehicleInput = z.infer<typeof UpdateSupplierVehicleInputSchema>;
 
 export const UpdateSupplierProductInputSchema = z.object({
-  sellingPrice: z.number().positive().optional(),
-  stockQuantity: z.number().min(0).optional(),
+  sellingPrice: z.number().finite().max(1_000_000_000).positive().optional(),
+  stockQuantity: z.number().finite().max(1_000_000_000).min(0).optional(),
   minOrderQty: z.number().min(1).optional(),
-  deliveryCharge: z.number().min(0).optional(),
+  deliveryCharge: z.number().finite().max(1_000_000_000).min(0).optional(),
   isAvailable: z.boolean().optional(),
-  lowStockThreshold: z.number().min(0).optional()
+  lowStockThreshold: z.number().finite().max(1_000_000_000).min(0).optional()
 });
 export type UpdateSupplierProductInput = z.infer<typeof UpdateSupplierProductInputSchema>;

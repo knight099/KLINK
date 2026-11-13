@@ -1,5 +1,4 @@
 import fp from 'fastify-plugin';
-import crypto from 'crypto';
 import { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import fastifyJwt from '@fastify/jwt';
 import { AuthTokenPayload, UserRole } from '@klink/shared-types';
@@ -10,66 +9,38 @@ declare module 'fastify' {
     requireRole: (...roles: UserRole[]) => (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 }
-
-declare module '@fastify/jwt' {
-  interface FastifyJWT {
-    user: AuthTokenPayload;
-  }
-}
+declare module '@fastify/jwt' { interface FastifyJWT { user: AuthTokenPayload; } }
 
 export const authPlugin: FastifyPluginAsync = fp(async (fastify) => {
-  // Use explicit JWT_SECRET or derive a cryptographic secret from private environment credentials
-  const jwtSecret =
-    process.env.JWT_SECRET ||
-    (process.env.DATABASE_URL
-      ? crypto.createHmac('sha256', 'klink-jwt-signing-key').update(process.env.DATABASE_URL).digest('hex')
-      : 'klink-darbhanga-secret-key-super-secure-2026');
-
-  await fastify.register(fastifyJwt, {
-    secret: jwtSecret
-  });
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 32) throw new Error('JWT_SECRET must contain at least 32 characters');
+  await fastify.register(fastifyJwt, { secret });
 
   fastify.decorate('authenticate', async (request: FastifyRequest, reply: FastifyReply) => {
-    try {
-      await request.jwtVerify();
-    } catch (err) {
-      reply.status(401).send({ error: 'Unauthorized: Invalid or missing token' });
+    try { await request.jwtVerify(); }
+    catch { return reply.status(401).send({ error: 'Unauthorized: Invalid or missing token' }); }
+    const claims = request.user;
+    const user = await fastify.prisma.user.findUnique({ where: { id: claims.id }, include: { supplier: true, customer: true } });
+    if (!user || claims.sessionVersion !== user.sessionVersion || claims.role !== user.role ||
+        claims.supplierId !== (user.supplier?.id ?? undefined) || claims.customerId !== (user.customer?.id ?? undefined)) {
+      return reply.status(401).send({ error: 'Session expired. Please sign in again.' });
+    }
+    if ((user.role === 'SUPPLIER' && (!user.supplier || user.supplier.status !== 'ACTIVE')) ||
+        (user.role === 'CUSTOMER' && !user.customer)) {
+      return reply.status(403).send({ error: 'Account is not active or has no valid profile' });
+    }
+    request.user = { id: user.id, phone: user.phone, role: user.role as UserRole,
+      name: user.supplier?.businessName || user.customer?.fullName || 'Platform Admin',
+      supplierId: user.supplier?.id, customerId: user.customer?.id,
+      mustChangePassword: user.mustChangePassword, sessionVersion: user.sessionVersion };
+    const path = request.routeOptions.url;
+    if (user.mustChangePassword && path !== '/api/v1/auth/change-password' && path !== '/api/v1/auth/me') {
+      return reply.status(403).send({ error: 'Change your temporary password before continuing' });
     }
   });
-
-  fastify.decorate('requireRole', (...roles: UserRole[]) => {
-    return async (request: FastifyRequest, reply: FastifyReply) => {
-      try {
-        await request.jwtVerify();
-        const user = request.user;
-        if (!user || !roles.includes(user.role)) {
-          return reply.status(403).send({
-            error: `Forbidden: requires one of roles [${roles.join(', ')}]`
-          });
-        }
-
-        // Live Database Status Check: Verify supplier account is still ACTIVE
-        if (user.role === 'SUPPLIER' && user.supplierId) {
-          const supplier = await fastify.prisma.supplier.findUnique({
-            where: { id: user.supplierId },
-            select: { status: true, businessName: true }
-          });
-
-          if (!supplier || supplier.status !== 'ACTIVE') {
-            const statusLabel =
-              supplier?.status === 'PENDING_APPROVAL'
-                ? 'pending administrator verification'
-                : supplier?.status === 'SUSPENDED'
-                ? 'suspended'
-                : 'inactive';
-            return reply.status(403).send({
-              error: `Forbidden: Your yard account (${supplier?.businessName || 'Supplier'}) is currently ${statusLabel}.`
-            });
-          }
-        }
-      } catch (err) {
-        return reply.status(401).send({ error: 'Unauthorized' });
-      }
-    };
+  fastify.decorate('requireRole', (...roles: UserRole[]) => async (request: FastifyRequest, reply: FastifyReply) => {
+    await fastify.authenticate(request, reply);
+    if (reply.sent) return;
+    if (!roles.includes(request.user.role)) return reply.status(403).send({ error: 'Forbidden: account role is not permitted' });
   });
 });

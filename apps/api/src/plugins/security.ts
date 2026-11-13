@@ -9,6 +9,7 @@ export const securityPlugin: FastifyPluginAsync = fp(async (fastify) => {
   // 1. Production Security Headers Hook
   fastify.addHook('onSend', async (request, reply) => {
     reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('Cache-Control', 'no-store');
     reply.header('X-Frame-Options', 'DENY');
     reply.header('X-XSS-Protection', '1; mode=block');
     reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -34,13 +35,15 @@ export const securityPlugin: FastifyPluginAsync = fp(async (fastify) => {
     }
   }, 5 * 60 * 1000);
 
-  fastify.addHook('onClose', () => {
+  cleanupInterval.unref();
+
+  fastify.addHook('onClose', async () => {
     clearInterval(cleanupInterval);
   });
 
   fastify.addHook('onRequest', async (request, reply) => {
     const ip = request.ip || request.socket.remoteAddress || 'unknown';
-    const isAuthRoute = request.url.startsWith('/api/v1/auth/login') || request.url.startsWith('/api/v1/auth/register-customer');
+    const isAuthRoute = request.url.startsWith('/api/v1/auth/');
 
     // Strict limit for sensitive auth endpoints (15 req/min), standard limit for general endpoints (300 req/min)
     const maxRequests = isAuthRoute ? 15 : 300;

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { lockSupplier, money } from '../../lib/orders';
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { CreateOrderInputSchema } from '@klink/shared-types';
@@ -41,6 +43,9 @@ export const customerRoutes: FastifyPluginAsyncZod = async (fastify) => {
         return reply.status(400).send({ error: 'Supplier not found or not currently active' });
       }
 
+      const serviceArea = await fastify.prisma.supplierServiceArea.findFirst({ where: { supplierId, districtId, isActive: true, district: { isActive: true } } });
+      if (!serviceArea) return reply.status(400).send({ error: 'Supplier does not serve this active district' });
+
       // 2. Fetch all supplier products and validate single-supplier constraint
       const supplierProductIds = items.map((i) => i.supplierProductId);
       const supplierProducts = await fastify.prisma.supplierProduct.findMany({
@@ -66,13 +71,14 @@ export const customerRoutes: FastifyPluginAsyncZod = async (fastify) => {
         const sp = supplierProducts.find((p) => p.id === item.supplierProductId);
         if (!sp) continue;
 
+        if (!sp.isAvailable || !sp.masterProduct.isActive || sp.stockQuantity < item.quantity) return reply.status(400).send({ error: 'Material is unavailable or has insufficient stock' });
         if (item.quantity < sp.minOrderQty) {
           return reply.status(400).send({
             error: `Minimum order quantity for ${sp.masterProduct.name} is ${sp.minOrderQty} ${sp.unit}`
           });
         }
 
-        const itemTotal = sp.sellingPrice * item.quantity;
+        const itemTotal = money(sp.sellingPrice * item.quantity);
         totalMaterialAmount += itemTotal;
         if (sp.deliveryCharge > maxDeliveryCharge) {
           maxDeliveryCharge = sp.deliveryCharge;
@@ -88,13 +94,13 @@ export const customerRoutes: FastifyPluginAsyncZod = async (fastify) => {
         });
       }
 
-      const finalTotal = totalMaterialAmount + maxDeliveryCharge;
+      const finalTotal = money(totalMaterialAmount + maxDeliveryCharge);
 
       // Generate collision-proof order number: KLK-<DISTRICT>-YYMMDD-<RANDOM>
       const district = await fastify.prisma.district.findUnique({ where: { id: districtId } });
       const districtCode = district?.code.substring(0, 3) || 'DRB';
       const datePrefix = new Date().toISOString().slice(2, 10).replace(/-/g, '');
-      const randSuffix = Math.floor(1000 + Math.random() * 9000);
+      const randSuffix = randomUUID();
       const orderNumber = `KLK-${districtCode}-${datePrefix}-${randSuffix}`;
 
       // 4. Create Order in PENDING_APPROVAL state (Roadmap Section 11)
@@ -229,13 +235,11 @@ export const customerRoutes: FastifyPluginAsyncZod = async (fastify) => {
         });
       }
 
-      const updated = await fastify.prisma.order.update({
-        where: { id },
-        data: {
-          status: 'CANCELLED',
-          balancePending: 0,
-          rejectionReason: 'Cancelled by customer before supplier dispatch'
-        }
+      const updated = await fastify.prisma.$transaction(async (tx) => {
+        await lockSupplier(tx, order.supplierId);
+        const result = await tx.order.updateMany({ where: { id, customerId, status: 'PENDING_APPROVAL' }, data: { status: 'CANCELLED', balancePending: 0, rejectionReason: 'Cancelled by customer' } });
+        if (!result.count) throw fastify.httpErrors.conflict('Order was already accepted or cancelled');
+        return tx.order.findUniqueOrThrow({ where: { id } });
       });
 
       return {

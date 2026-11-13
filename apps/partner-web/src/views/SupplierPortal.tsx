@@ -114,6 +114,8 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
 
   // 2. Manual Payment Modal
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const financialSubmitRef = useRef(false);
+  const [isPostingFinancial, setIsPostingFinancial] = useState(false);
   const [paymentCustomerId, setPaymentCustomerId] = useState('');
   const [paymentOrderId, setPaymentOrderId] = useState('');
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
@@ -422,6 +424,9 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
       alert('Please enter a valid payment amount');
       return;
     }
+    if (financialSubmitRef.current) return;
+    financialSubmitRef.current = true;
+    setIsPostingFinancial(true);
     try {
       await apiFetch<any>('/supplier/payments/manual', {
         method: 'POST',
@@ -446,6 +451,9 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
       loadLedger();
     } catch (e: any) {
       alert(e.message || 'Failed to record manual payment');
+    } finally {
+      financialSubmitRef.current = false;
+      setIsPostingFinancial(false);
     }
   };
 
@@ -457,6 +465,9 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
       return;
     }
 
+    if (financialSubmitRef.current) return;
+    financialSubmitRef.current = true;
+    setIsPostingFinancial(true);
     try {
       const payload: any = {
         deliveryCharge: manualDeliveryCharge,
@@ -506,6 +517,9 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
       loadCustomers();
     } catch (e: any) {
       alert(e.message || 'Failed to create manual order');
+    } finally {
+      financialSubmitRef.current = false;
+      setIsPostingFinancial(false);
     }
   };
 
@@ -2797,7 +2811,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                 </button>
                 <button
                   type="submit"
-                  disabled={manualItems.length === 0}
+                  disabled={isPostingFinancial || manualItems.length === 0}
                   className="flex-1 py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white text-xs font-mono font-semibold shadow-2xs disabled:opacity-50 cursor-pointer"
                 >
                   Confirm & Create Order (₹{manualFinalTotal.toLocaleString('en-IN')})
@@ -2983,7 +2997,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                     <option value="UPI_DIRECT">Direct UPI to Dealer</option>
                     <option value="BANK_TRANSFER">Bank Transfer / NEFT</option>
                     <option value="CHEQUE">Cheque</option>
-                    <option value="UDHAAR">Udhaar Adjustment</option>
+
                   </select>
                 </div>
               </div>
@@ -3020,6 +3034,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                 </button>
                 <button
                   type="submit"
+                  disabled={isPostingFinancial}
                   className="flex-1 py-2 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs shadow-xs"
                 >
                   Confirm & Post Payment
@@ -3161,6 +3176,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                 </button>
                 <button
                   type="submit"
+                  disabled={isPostingFinancial}
                   className="flex-1 py-2 rounded-lg bg-stone-900 text-white font-semibold text-xs hover:bg-stone-800 shadow-xs"
                 >
                   Confirm & Dispatch
@@ -3221,6 +3237,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                 </button>
                 <button
                   type="submit"
+                  disabled={isPostingFinancial}
                   className="flex-1 py-2 rounded-lg bg-stone-900 text-white font-semibold text-xs hover:bg-stone-800 shadow-xs"
                 >
                   Mark Delivered

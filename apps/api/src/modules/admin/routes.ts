@@ -357,143 +357,27 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
   );
 
   // Founder: Fix / Override Order Mistakes
-  fastify.patch(
-    '/orders/:id',
-    {
-      schema: {
-        tags: ['Admin Portal'],
-        summary: 'Founder: Intervene and fix order mistakes (status, address, phone, transport details, amounts)',
-        params: z.object({ id: z.string() }),
-        body: z.object({
-          status: z.enum([
-            'PENDING_APPROVAL',
-            'CONFIRMED',
-            'PREPARING',
-            'OUT_FOR_DELIVERY',
-            'DELIVERED',
-            'COMPLETED',
-            'CANCELLED',
-            'REJECTED'
-          ]).optional(),
-          deliveryAddress: z.string().optional(),
-          siteContactPhone: z.string().optional(),
-          vehicleNumber: z.string().optional(),
-          driverName: z.string().optional(),
-          driverPhone: z.string().optional(),
-          deliveryChallanNo: z.string().optional(),
-          deliveryInstructions: z.string().optional(),
-          rejectionReason: z.string().optional(),
-          finalTotal: z.number().optional(),
-          balancePending: z.number().optional(),
-          paymentStatus: z.enum(['PENDING', 'PARTIALLY_PAID', 'PAID', 'UDHAAR']).optional()
-        })
-      }
-    },
-    async (request, reply) => {
-      const { id } = request.params;
-      const updateData = request.body;
-
-      const order = await fastify.prisma.order.findUnique({
-        where: { id },
-        include: { items: true }
-      });
-
-      if (!order) {
-        return reply.status(404).send({ error: 'Order not found' });
-      }
-
-      return await fastify.prisma.$transaction(async (tx) => {
-        // Stock reconciliation if status is changed
-        if (updateData.status && updateData.status !== order.status) {
-          const oldStatus = order.status;
-          const newStatus = updateData.status;
-
-          const isOldDead = ['CANCELLED', 'REJECTED'].includes(oldStatus);
-          const isNewDead = ['CANCELLED', 'REJECTED'].includes(newStatus);
-
-          // If transitioning from active to dead: restore stock only if it was previously accepted
-          if (!isOldDead && isNewDead) {
-            if (oldStatus !== 'PENDING_APPROVAL') {
-              for (const item of order.items) {
-                await tx.supplierProduct.update({
-                  where: { id: item.supplierProductId },
-                  data: { stockQuantity: { increment: item.quantity } }
-                });
-              }
-            }
-            if (updateData.balancePending === undefined) {
-              updateData.balancePending = 0;
-            }
-          }
-          // If reviving from dead back to active: decrement stock again
-          else if (isOldDead && !isNewDead) {
-            if (newStatus !== 'PENDING_APPROVAL') {
-              for (const item of order.items) {
-                await tx.supplierProduct.update({
-                  where: { id: item.supplierProductId },
-                  data: { stockQuantity: { decrement: item.quantity } }
-                });
-              }
-            }
-            if (updateData.balancePending === undefined) {
-              updateData.balancePending = updateData.finalTotal || order.finalTotal;
-            }
-          }
-        }
-
-        const updated = await tx.order.update({
-          where: { id },
-          data: updateData,
-          include: {
-            supplier: true,
-            customer: true,
-            items: true
-          }
-        });
-
-        // Sync Customer Ledger so order corrections reflect immediately in outstanding debt
-        const orderSum = await tx.order.aggregate({
-          where: {
-            supplierId: order.supplierId,
-            customerId: order.customerId,
-            status: { notIn: ['PENDING_APPROVAL', 'CANCELLED', 'REJECTED'] }
-          },
-          _sum: { finalTotal: true }
-        });
-        const paymentSum = await tx.paymentRecord.aggregate({
-          where: {
-            supplierId: order.supplierId,
-            customerId: order.customerId
-          },
-          _sum: { amount: true }
-        });
-        const totalPurchased = orderSum._sum.finalTotal || 0;
-        const totalPaid = paymentSum._sum.amount || 0;
-        await tx.customerLedger.upsert({
-          where: {
-            supplierId_customerId: {
-              supplierId: order.supplierId,
-              customerId: order.customerId
-            }
-          },
-          create: {
-            supplierId: order.supplierId,
-            customerId: order.customerId,
-            totalPurchased,
-            totalPaid,
-            outstandingBalance: Math.max(0, totalPurchased - totalPaid)
-          },
-          update: {
-            totalPurchased,
-            totalPaid,
-            outstandingBalance: Math.max(0, totalPurchased - totalPaid)
-          }
-        });
-
-        return { message: 'Order successfully corrected by administrator', order: updated };
-      });
+  // Financial and fulfillment changes must use the supplier workflows so stock,
+  // payment records and ledger remain consistent. Admin may correct delivery details.
+  fastify.patch('/orders/:id', {
+    schema: {
+      tags: ['Admin Portal'],
+      params: z.object({ id: z.string() }),
+      body: z.object({
+        deliveryAddress: z.string().min(5).optional(),
+        siteContactPhone: z.string().min(10).optional(),
+        driverName: z.string().optional(),
+        driverPhone: z.string().optional(),
+        deliveryChallanNo: z.string().optional(),
+        deliveryInstructions: z.string().optional()
+      }).strict()
     }
-  );
+  }, async (request, reply) => {
+    const order = await fastify.prisma.order.findUnique({ where: { id: request.params.id } });
+    if (!order) return reply.status(404).send({ error: 'Order not found' });
+    const updated = await fastify.prisma.order.update({ where: { id: order.id }, data: request.body });
+    return { message: 'Delivery details corrected', order: updated };
+  });
 
   // User Management: List all platform users
   fastify.get(
@@ -572,7 +456,7 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
         return reply.status(404).send({ error: 'User not found' });
       }
 
-      const updateData: any = {};
+      const updateData: any = { sessionVersion: { increment: 1 } };
       if (phone) updateData.phone = phone;
       if (role) updateData.role = role;
       if (mustChangePassword !== undefined) updateData.mustChangePassword = mustChangePassword;
@@ -766,89 +650,9 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
     }
   );
 
-  // Founder: Direct Udhaar Balance Adjustment
-  fastify.patch(
-    '/customers/:id/balance',
-    {
-      schema: {
-        tags: ['Admin Portal'],
-        summary: 'Founder: Correct contractor Udhaar balance in case of dispute or ledger typo',
-        params: z.object({ id: z.string() }),
-        body: z.object({
-          newBalance: z.number().min(0),
-          adjustmentReason: z.string().optional(),
-          reason: z.string().optional(),
-          supplierId: z.string().optional()
-        })
-      }
-    },
-    async (request, reply) => {
-      const { id } = request.params;
-      const { newBalance, adjustmentReason, reason, supplierId } = request.body;
-      const note = adjustmentReason || reason || 'Manual adjustment by platform admin';
-
-      const customer = await fastify.prisma.customer.findUnique({
-        where: { id },
-        include: { ledgers: true }
-      });
-      if (!customer) {
-        return reply.status(404).send({ error: 'Customer not found' });
-      }
-
-      let targetSupplierId = supplierId;
-      if (!targetSupplierId && customer.ledgers.length > 0) {
-        targetSupplierId = customer.ledgers[0].supplierId;
-      }
-      if (!targetSupplierId) {
-        const firstSupplier = await fastify.prisma.supplier.findFirst();
-        if (firstSupplier) targetSupplierId = firstSupplier.id;
-      }
-
-      if (targetSupplierId) {
-        const existingLedger = customer.ledgers.find((l) => l.supplierId === targetSupplierId);
-        const currentBalance = existingLedger ? existingLedger.outstandingBalance : 0;
-        const diff = currentBalance - newBalance;
-
-        // Persist the adjustment as an audit PaymentRecord so subsequent recalculations preserve it
-        if (diff !== 0) {
-          await fastify.prisma.paymentRecord.create({
-            data: {
-              supplierId: targetSupplierId,
-              customerId: id,
-              amount: diff,
-              paymentMode: 'UDHAAR',
-              notes: `Admin Balance Override: ${note} (₹${currentBalance} -> ₹${newBalance})`
-            }
-          });
-        }
-
-        await fastify.prisma.customerLedger.upsert({
-          where: {
-            supplierId_customerId: {
-              supplierId: targetSupplierId,
-              customerId: id
-            }
-          },
-          create: {
-            supplierId: targetSupplierId,
-            customerId: id,
-            outstandingBalance: newBalance,
-            totalPurchased: newBalance,
-            totalPaid: 0
-          },
-          update: {
-            outstandingBalance: newBalance
-          }
-        });
-      }
-
-      return {
-        message: `Customer Udhaar balance adjusted to ₹${newBalance.toLocaleString('en-IN')}`,
-        customer,
-        reason: note
-      };
-    }
-  );
+  // Balance changes require an auditable adjustment/refund workflow, not fake cash.
+  fastify.patch('/customers/:id/balance', async (_request, reply) =>
+    reply.status(409).send({ error: 'Direct balance overrides are disabled. Reconcile the underlying orders and payments.' }));
 
   // View All Payment Records
   fastify.get(
@@ -874,79 +678,6 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
     }
   );
 
-  // Founder: Delete Erroneous Payment Record
-  fastify.delete(
-    '/payments/:id',
-    {
-      schema: {
-        tags: ['Admin Portal'],
-        summary: 'Founder: Delete a wrongly recorded payment and recalculate customer ledger',
-        params: z.object({ id: z.string() })
-      }
-    },
-    async (request, reply) => {
-      const { id } = request.params;
-
-      const payment = await fastify.prisma.paymentRecord.findUnique({ where: { id } });
-      if (!payment) {
-        return reply.status(404).send({ error: 'Payment record not found' });
-      }
-
-      await fastify.prisma.$transaction(async (tx) => {
-        // Delete payment
-        await tx.paymentRecord.delete({ where: { id } });
-
-        // If linked to an order, restore balancePending on that order
-        if (payment.orderId) {
-          await tx.order.update({
-            where: { id: payment.orderId },
-            data: {
-              balancePending: { increment: payment.amount }
-            }
-          });
-        }
-
-        // Recalculate customer total ledger
-        const allPayments = await tx.paymentRecord.aggregate({
-          where: { supplierId: payment.supplierId, customerId: payment.customerId },
-          _sum: { amount: true }
-        });
-        const totalPaid = allPayments._sum.amount || 0;
-
-        const allOrders = await tx.order.aggregate({
-          where: {
-            supplierId: payment.supplierId,
-            customerId: payment.customerId,
-            status: { notIn: ['PENDING_APPROVAL', 'REJECTED', 'CANCELLED'] }
-          },
-          _sum: { finalTotal: true }
-        });
-        const totalPurchased = allOrders._sum.finalTotal || 0;
-        const currentBalance = Math.max(0, totalPurchased - totalPaid);
-
-        await tx.customerLedger.upsert({
-          where: {
-            supplierId_customerId: {
-              supplierId: payment.supplierId,
-              customerId: payment.customerId
-            }
-          },
-          create: {
-            supplierId: payment.supplierId,
-            customerId: payment.customerId,
-            totalPurchased,
-            totalPaid,
-            outstandingBalance: currentBalance
-          },
-          update: {
-            totalPurchased,
-            totalPaid,
-            outstandingBalance: currentBalance
-          }
-        });
-      });
-
-      return { message: 'Payment record removed and customer ledger recalculated successfully' };
-    }
-  );
+  fastify.delete('/payments/:id', async (_request, reply) =>
+    reply.status(409).send({ error: 'Payment history is immutable. A verified refund/reversal workflow is required.' }));
 };

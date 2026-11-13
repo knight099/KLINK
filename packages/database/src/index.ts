@@ -62,11 +62,7 @@ const dbUrl = process.env.DATABASE_URL;
 export const prisma =
   global.prisma ||
   new PrismaClient({
-    datasources: {
-      db: {
-        url: dbUrl
-      }
-    },
+    ...(dbUrl ? { datasources: { db: { url: dbUrl } } } : {}),
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error']
   });
 

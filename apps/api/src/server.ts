@@ -59,3 +59,11 @@ server.listen({ port: PORT, host: HOST }, (err, address) => {
   console.log(`🚀 KLINK Fastify Marketplace API running at: ${address}`);
   console.log(`📚 Swagger OpenAPI Documentation: ${address}/documentation`);
 });
+
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.once(signal, async () => {
+    const timeout = setTimeout(() => process.exit(1), 10_000).unref();
+    try { await server.close(); clearTimeout(timeout); process.exit(0); }
+    catch (error) { server.log.error(error); process.exit(1); }
+  });
+}

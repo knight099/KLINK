@@ -13,6 +13,7 @@ model User {
   passwordHash       String
   role               String    // ADMIN, SUPPLIER, CUSTOMER
   mustChangePassword Boolean   @default(false)
+  sessionVersion     Int       @default(0)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -171,6 +172,8 @@ model CustomerAddress {
 model Order {
   id                   String          @id @default(cuid())
   orderNumber          String          @unique
+  idempotencyKey       String?
+  requestHash          String?
   customerId           String
   supplierId           String
   districtId           String
@@ -201,6 +204,7 @@ model Order {
   district             District        @relation(fields: [districtId], references: [id])
   items                OrderItem[]
   paymentRecords       PaymentRecord[]
+  @@unique([supplierId, idempotencyKey])
 }
 
 model OrderItem {
@@ -226,10 +230,13 @@ model PaymentRecord {
   paymentMode String   // CASH, UPI_DIRECT, BANK_TRANSFER, CHEQUE, UDHAAR
   notes       String?
   recordedAt  DateTime @default(now())
+  idempotencyKey String?
+  requestHash String?
 
   supplier    Supplier @relation(fields: [supplierId], references: [id])
   customer    Customer @relation(fields: [customerId], references: [id])
   order       Order?   @relation(fields: [orderId], references: [id])
+  @@unique([supplierId, idempotencyKey])
 }
 
 model CustomerLedger {

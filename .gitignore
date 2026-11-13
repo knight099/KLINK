@@ -151,3 +151,7 @@ dmypy.json
 .vercel
 .env*
 .neon
+
+!.env.example
+playwright-report/
+test-results/

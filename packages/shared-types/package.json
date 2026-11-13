@@ -11,7 +11,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "zod": "^3.24.2"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@klink/tsconfig": "workspace:*",
@@ -19,4 +19,3 @@
     "typescript": "^5.8.2"
   }
 }
-
