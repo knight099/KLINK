@@ -36,5 +36,9 @@
         }
       ]
     }
-  ]
+  ],
+  "framework": "vite",
+  "installCommand": "cd ../.. && corepack pnpm install --frozen-lockfile",
+  "buildCommand": "cd ../.. && pnpm --filter @klink/shared-types run build && pnpm --filter @klink/marketplace-web run build",
+  "outputDirectory": "dist"
 }
