@@ -27,21 +27,21 @@ export const OrderItemSchema = z.object({
   supplierProductId: z.string(),
   masterProductName: z.string(),
   unit: UnitEnum,
-  quantity: z.number().positive(),
-  unitPrice: z.number().positive(),
-  totalPrice: z.number().positive()
+  quantity: z.number().finite().max(1_000_000_000).positive(),
+  unitPrice: z.number().finite().max(1_000_000_000).positive(),
+  totalPrice: z.number().finite().max(1_000_000_000).positive()
 });
 export type OrderItem = z.infer<typeof OrderItemSchema>;
 
 export const CreateOrderItemInputSchema = z.object({
   supplierProductId: z.string(),
-  quantity: z.number().positive()
+  quantity: z.number().finite().max(1_000_000_000).positive()
 });
 
 export const CreateOrderInputSchema = z.object({
   supplierId: z.string().min(1, 'Supplier is required (1 cart = 1 supplier)'),
   districtId: z.string().min(1, 'District is required'),
-  items: z.array(CreateOrderItemInputSchema).min(1, 'At least 1 item is required'),
+  items: z.array(CreateOrderItemInputSchema).min(1).max(100).refine(items => new Set(items.map(i => i.supplierProductId)).size === items.length, 'Duplicate products are not allowed'),
   deliveryAddress: z.string().min(5, 'Delivery site address is required'),
   landmark: z.string().optional(),
   pincode: z.string().optional(),
@@ -74,8 +74,8 @@ export type CompleteDeliveryInput = z.infer<typeof CompleteDeliveryInputSchema>;
 
 export const ManualOrderItemInputSchema = z.object({
   supplierProductId: z.string(),
-  quantity: z.number().positive(),
-  unitPrice: z.number().positive().optional()
+  quantity: z.number().finite().max(1_000_000_000).positive(),
+  unitPrice: z.number().finite().max(1_000_000_000).positive().optional()
 });
 
 export const CreateManualOrderInputSchema = z.object({
@@ -83,8 +83,8 @@ export const CreateManualOrderInputSchema = z.object({
   customerName: z.string().min(2).optional(),
   customerPhone: z.string().min(10).optional(),
   customerAddress: z.string().optional(),
-  items: z.array(ManualOrderItemInputSchema).min(1, 'At least 1 product required'),
-  deliveryCharge: z.number().min(0).default(0),
+  items: z.array(ManualOrderItemInputSchema).min(1).max(100).refine(items => new Set(items.map(i => i.supplierProductId)).size === items.length, 'Duplicate products are not allowed'),
+  deliveryCharge: z.number().finite().max(1_000_000_000).min(0).default(0),
   deliveryAddress: z.string().min(5, 'Delivery address is required'),
   landmark: z.string().optional(),
   pincode: z.string().optional(),
@@ -93,7 +93,7 @@ export const CreateManualOrderInputSchema = z.object({
   vehicleNumber: z.string().optional(),
   driverName: z.string().optional(),
   driverPhone: z.string().optional(),
-  amountPaid: z.number().min(0).default(0),
+  amountPaid: z.number().finite().max(1_000_000_000).min(0).multipleOf(0.01).default(0),
   paymentMode: z.enum(['CASH', 'UPI_DIRECT', 'BANK_TRANSFER', 'CHEQUE', 'UDHAAR']).default('CASH'),
   paymentNotes: z.string().optional(),
   initialStatus: z.enum(['PENDING_APPROVAL', 'CONFIRMED', 'OUT_FOR_DELIVERY', 'DELIVERED']).default('CONFIRMED')

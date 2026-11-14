@@ -44,7 +44,7 @@ export const MasterProductSchema = z.object({
   description: z.string().optional(),
   defaultUnit: UnitEnum,
   allowedUnits: z.array(UnitEnum).optional(),
-  specifications: z.record(z.any()).optional(),
+  specifications: z.record(z.string(), z.any()).optional(),
   imageUrl: z.string().optional(),
   isActive: z.boolean(),
   category: CategorySchema.optional(),
@@ -58,7 +58,7 @@ export const CreateMasterProductInputSchema = z.object({
   name: z.string().min(2),
   description: z.string().optional(),
   defaultUnit: UnitEnum,
-  specifications: z.record(z.any()).optional(),
+  specifications: z.record(z.string(), z.any()).optional(),
   imageUrl: z.string().optional()
 });
 export type CreateMasterProductInput = z.infer<typeof CreateMasterProductInputSchema>;
@@ -69,7 +69,7 @@ export const UpdateMasterProductInputSchema = z.object({
   name: z.string().min(2).optional(),
   description: z.string().optional(),
   defaultUnit: UnitEnum.optional(),
-  specifications: z.record(z.any()).optional(),
+  specifications: z.record(z.string(), z.any()).optional(),
   imageUrl: z.string().optional(),
   isActive: z.boolean().optional()
 });

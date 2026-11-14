@@ -59,6 +59,7 @@ export const AuthTokenPayloadSchema = z.object({
   supplierId: z.string().optional(),
   customerId: z.string().optional(),
   name: z.string(),
-  mustChangePassword: z.boolean().optional()
+  mustChangePassword: z.boolean().optional(),
+  sessionVersion: z.number().int().optional()
 });
 export type AuthTokenPayload = z.infer<typeof AuthTokenPayloadSchema>;

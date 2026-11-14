@@ -12,12 +12,15 @@
     "dev:web": "pnpm --filter @klink/web run dev",
     "build": "pnpm --filter @klink/shared-types run build && pnpm --filter @klink/database run build && pnpm --filter @klink/api run build && pnpm --filter @klink/marketplace-web run build && pnpm --filter @klink/partner-web run build && pnpm --filter @klink/admin-web run build && pnpm --filter @klink/web run build",
     "build:turbo": "turbo run build",
-    "lint": "turbo run lint",
     "type-check": "pnpm -r run type-check",
     "db:generate": "pnpm --filter @klink/database run db:generate",
     "db:push": "pnpm --filter @klink/database run db:push",
     "db:seed": "pnpm --filter @klink/database run db:seed",
-    "clean": "git clean -xdf node_modules"
+    "clean": "git clean -xdf node_modules",
+    "test": "pnpm --filter @klink/api test",
+    "db:migrate": "pnpm --filter @klink/database db:migrate",
+    "db:bootstrap": "pnpm --filter @klink/database db:bootstrap",
+    "check": "pnpm build && pnpm type-check && pnpm test"
   },
   "devDependencies": {
     "turbo": "^2.4.4",
@@ -27,5 +30,8 @@
   "dependencies": {
     "@neon/config": "^1.9.5",
     "@neon/env": "^1.6.6"
+  },
+  "engines": {
+    "node": ">=22 <25"
   }
 }

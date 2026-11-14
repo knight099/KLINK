@@ -25,9 +25,10 @@ import { aiGatewayRoutes } from './modules/ai/routes';
 
 export function buildApp() {
   const app = Fastify({
-    trustProxy: true,
+    trustProxy: process.env.TRUST_PROXY === '1' ? (_address: string, hop: number) => hop === 0 : false,
     logger: {
-      level: process.env.NODE_ENV === 'test' ? 'silent' : 'info'
+      level: process.env.NODE_ENV === 'test' ? 'silent' : 'info',
+      redact: ['req.headers.authorization', 'req.headers.cookie']
     }
   }).withTypeProvider<ZodTypeProvider>();
 
@@ -42,18 +43,8 @@ export function buildApp() {
       if (!origin || process.env.NODE_ENV !== 'production') {
         return cb(null, true);
       }
-      // In production, allow *.vercel.app, klink domains, or explicitly allowed origins
-      const allowedPatterns = [
-        /\.vercel\.app$/,
-        /^https:\/\/.*\.klink\.in$/,
-        /^https:\/\/klink\.in$/
-      ];
-      if (process.env.ALLOWED_ORIGINS) {
-        const extra = process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim());
-        if (extra.includes(origin)) return cb(null, true);
-      }
-      const isMatch = allowedPatterns.some((pattern) => pattern.test(origin));
-      cb(null, isMatch);
+      const allowed = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+      cb(null, allowed.includes(origin));
     },
     credentials: true
   });
@@ -63,29 +54,29 @@ export function buildApp() {
   app.register(securityPlugin);
   app.register(prismaPlugin);
   app.register(authPlugin);
-  app.register(swaggerPlugin);
+  if (process.env.NODE_ENV !== 'production') app.register(swaggerPlugin);
 
-  // Health check
-  app.get('/health', async () => {
-    let dbStatus = 'connected';
+  app.setErrorHandler<import('fastify').FastifyError>((error, request, reply) => {
+    const status = error.statusCode && error.statusCode >= 400 && error.statusCode < 500 ? error.statusCode : 500;
+    if (status === 500) request.log.error({ err: error }, 'Request failed');
+    const code = (error as { code?: string }).code;
+    if (code === 'P2002') return reply.status(409).send({ error: 'A record with these details already exists' });
+    if (code === 'P2025') return reply.status(409).send({ error: 'Record changed or is no longer available' });
+    return reply.status(status).send({ error: status === 500 ? 'Internal server error' : error.message });
+  });
+
+  const readiness = async (_request: unknown, reply: import('fastify').FastifyReply) => {
+    reply.header('Cache-Control', 'no-store');
     try {
       await app.prisma.$queryRaw`SELECT 1`;
-    } catch (e: any) {
-      dbStatus = `disconnected: ${e.message}`;
+      return { status: 'ok', service: 'klink-marketplace-api' };
+    } catch {
+      return reply.status(503).send({ status: 'unavailable', service: 'klink-marketplace-api' });
     }
-
-    return {
-      status: 'ok',
-      service: 'klink-marketplace-api',
-      database: dbStatus,
-      neon: {
-        branch: process.env.NEON_BRANCH || 'production',
-        storage: !!process.env.AWS_ENDPOINT_URL_S3,
-        auth: !!process.env.NEON_AUTH_BASE_URL
-      },
-      time: new Date().toISOString()
-    };
-  });
+  };
+  app.get('/health', readiness);
+  app.get('/api/health', readiness);
+  app.get('/api/live', async () => ({ status: 'ok' }));
 
   // API v1 Domain Routes
   app.register(authRoutes, { prefix: '/api/v1/auth' });

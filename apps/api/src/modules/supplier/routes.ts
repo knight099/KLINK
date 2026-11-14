@@ -1,3 +1,5 @@
+import { randomUUID, randomBytes, createHash } from 'node:crypto';
+import { lockSupplier, reserveStock, canTransition, money, acceptedStatuses } from '../../lib/orders';
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
@@ -50,9 +52,9 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
       _sum: { amount: true }
     });
 
-    const totalPurchased = orderSum._sum.finalTotal || 0;
-    const totalPaid = paymentSum._sum.amount || 0;
-    const outstandingBalance = Math.max(0, totalPurchased - totalPaid);
+    const totalPurchased = money(orderSum._sum.finalTotal || 0);
+    const totalPaid = money(paymentSum._sum.amount || 0);
+    const outstandingBalance = Math.max(0, money(totalPurchased - totalPaid));
 
     const lastOrder = await tx.order.findFirst({
       where: {
@@ -407,26 +409,15 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
 
       // Execute stock reservation, restoration, status transition, and ledger calculation atomically
       const updatedOrder = await fastify.prisma.$transaction(async (tx) => {
-        // If accepting order, verify available stock and reserve / deduct stock
+        await lockSupplier(tx, supplierId);
+        const order = await tx.order.findFirst({ where: { id, supplierId }, include: { items: true } });
+        if (!order) throw fastify.httpErrors.notFound('Order not found');
+        if (!canTransition(order.status, status)) throw fastify.httpErrors.badRequest(`Cannot change ${order.status} to ${status}`);
+        if (['CANCELLED', 'REJECTED'].includes(status) && order.amountPaid > 0) {
+          throw fastify.httpErrors.badRequest('Paid orders require a reconciled refund before cancellation');
+        }
         if (order.status === 'PENDING_APPROVAL' && status === 'CONFIRMED') {
-          for (const item of order.items) {
-            const sp = await tx.supplierProduct.findUnique({
-              where: { id: item.supplierProductId }
-            });
-            if (!sp || sp.stockQuantity < item.quantity) {
-              throw fastify.httpErrors.badRequest(
-                `Insufficient yard stock for ${item.masterProductName}. Available: ${sp?.stockQuantity || 0} ${item.unit}, Required: ${item.quantity} ${item.unit}`
-              );
-            }
-            await tx.supplierProduct.update({
-              where: { id: item.supplierProductId },
-              data: {
-                stockQuantity: {
-                  decrement: item.quantity
-                }
-              }
-            });
-          }
+          await reserveStock(tx, supplierId, order.items);
         }
 
         // If order was cancelled/rejected after confirmation, restore reserved stock
@@ -495,10 +486,26 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
         return reply.status(404).send({ error: 'Order not found' });
       }
 
+      const keyResult = z.string().min(8).max(128).safeParse(request.headers['idempotency-key']);
+      if (!keyResult.success) throw fastify.httpErrors.badRequest('A unique Idempotency-Key header (8-128 characters) is required');
+      const idempotencyKey = keyResult.data;
+      const requestHash = createHash('sha256').update(JSON.stringify({ path: request.url, body: request.body })).digest('hex');
       const result = await fastify.prisma.$transaction(async (tx) => {
+        await lockSupplier(tx, supplierId);
+        const previous = await tx.paymentRecord.findUnique({ where: { supplierId_idempotencyKey: { supplierId, idempotencyKey } } });
+        if (previous) {
+          if (previous.requestHash !== requestHash) throw fastify.httpErrors.conflict('Payment key already used for a different request');
+          return { payment: previous, order: await tx.order.findUniqueOrThrow({ where: { id } }) };
+        }
+        const order = await tx.order.findFirst({ where: { id, supplierId }, include: { items: true } });
+        if (!order) throw fastify.httpErrors.notFound('Order not found');
+        if (!acceptedStatuses.includes(order.status)) throw fastify.httpErrors.badRequest('Only accepted orders can receive payments');
+        if (paymentMode === 'UDHAAR') throw fastify.httpErrors.badRequest('Udhaar is credit, not a payment received');
+        if (amount > money(order.balancePending)) throw fastify.httpErrors.badRequest('Payment exceeds outstanding balance');
         // Record payment transaction
         const payment = await tx.paymentRecord.create({
           data: {
+            idempotencyKey, requestHash,
             supplierId,
             customerId: order.customerId,
             orderId: order.id,
@@ -508,16 +515,15 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
           }
         });
 
-        const newAmountPaid = order.amountPaid + amount;
-        const newBalancePending = Math.max(0, order.finalTotal - newAmountPaid);
+        const newAmountPaid = money(order.amountPaid + amount);
+        const newBalancePending = Math.max(0, money(order.finalTotal - newAmountPaid));
 
         let paymentStatus = 'PENDING';
         if (newBalancePending <= 0) {
           paymentStatus = 'PAID';
         } else if (newAmountPaid > 0) {
           paymentStatus = 'PARTIALLY_PAID';
-        } else if (paymentMode === 'UDHAAR') {
-          paymentStatus = 'UDHAAR';
+
         }
 
         const updatedOrder = await tx.order.update({
@@ -593,7 +599,7 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
         summary: 'Record direct customer Udhaar payment settlement',
         body: z.object({
           customerId: z.string(),
-          amount: z.number().positive(),
+          amount: z.number().positive().max(1_000_000_000).multipleOf(0.01),
           paymentMode: z.enum(['CASH', 'UPI_DIRECT', 'BANK_TRANSFER', 'CHEQUE']),
           notes: z.string().optional()
         })
@@ -603,10 +609,23 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const supplierId = getSupplierId(request);
       const { customerId, amount, paymentMode, notes } = request.body;
 
+      const keyResult = z.string().min(8).max(128).safeParse(request.headers['idempotency-key']);
+      if (!keyResult.success) throw fastify.httpErrors.badRequest('A unique Idempotency-Key header (8-128 characters) is required');
+      const idempotencyKey = keyResult.data;
+      const requestHash = createHash('sha256').update(JSON.stringify({ path: request.url, body: request.body })).digest('hex');
       const result = await fastify.prisma.$transaction(async (tx) => {
+        await lockSupplier(tx, supplierId);
+        const previous = await tx.paymentRecord.findUnique({ where: { supplierId_idempotencyKey: { supplierId, idempotencyKey } } });
+        if (previous) {
+          if (previous.requestHash !== requestHash) throw fastify.httpErrors.conflict('Payment key already used for a different request');
+          return { payment: previous, ledger: await recalculateCustomerLedger(tx, supplierId, customerId) };
+        }
+        const due = await tx.order.aggregate({ where: { supplierId, customerId, status: { in: acceptedStatuses } }, _sum: { balancePending: true } });
+        if (amount > money(due._sum.balancePending || 0)) throw fastify.httpErrors.badRequest('Settlement exceeds outstanding balance for this yard');
         // 1. Record general payment
         const payment = await tx.paymentRecord.create({
           data: {
+            idempotencyKey, requestHash,
             supplierId,
             customerId,
             amount,
@@ -621,7 +640,7 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
             supplierId,
             customerId,
             balancePending: { gt: 0 },
-            status: { notIn: ['CANCELLED', 'REJECTED'] }
+            status: { in: acceptedStatuses }
           },
           orderBy: { createdAt: 'asc' }
         });
@@ -630,8 +649,8 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
         for (const o of unpaidOrders) {
           if (remaining <= 0) break;
           const payTowardsOrder = Math.min(remaining, o.balancePending);
-          const newPaid = o.amountPaid + payTowardsOrder;
-          const newBal = o.balancePending - payTowardsOrder;
+          const newPaid = money(o.amountPaid + payTowardsOrder);
+          const newBal = money(o.balancePending - payTowardsOrder);
 
           await tx.order.update({
             where: { id: o.id },
@@ -674,7 +693,7 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const { customerId } = request.params;
 
       const customer = await fastify.prisma.customer.findUnique({
-        where: { id: customerId }
+        where: { id: customerId, orders: { some: { supplierId } } }
       });
       if (!customer) return reply.status(404).send({ error: 'Customer not found' });
 
@@ -688,7 +707,7 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
         where: {
           supplierId,
           customerId,
-          status: { notIn: ['CANCELLED', 'REJECTED'] }
+          status: { in: acceptedStatuses }
         },
         include: { items: true },
         orderBy: { createdAt: 'desc' }
@@ -779,6 +798,10 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
         initialStatus
       } = request.body;
 
+      const keyResult = z.string().min(8).max(128).safeParse(request.headers['idempotency-key']);
+      if (!keyResult.success) throw fastify.httpErrors.badRequest('A unique Idempotency-Key header (8-128 characters) is required');
+      const idempotencyKey = keyResult.data;
+      const requestHash = createHash('sha256').update(JSON.stringify(request.body)).digest('hex');
       // Validate supplier products and calculate total upfront
       const supplierProducts = await fastify.prisma.supplierProduct.findMany({
         where: {
@@ -799,7 +822,7 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
           throw fastify.httpErrors.badRequest(`Product ${item.supplierProductId} not found in your inventory`);
         }
         const unitPrice = item.unitPrice ?? sp.sellingPrice;
-        const totalPrice = unitPrice * item.quantity;
+        const totalPrice = money(unitPrice * item.quantity);
         totalMaterialAmount += totalPrice;
 
         orderItemsData.push({
@@ -812,9 +835,12 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
         });
       }
 
-      const finalTotal = totalMaterialAmount + deliveryCharge;
-      const validAmountPaid = Math.min(amountPaid, finalTotal);
-      const balancePending = Math.max(0, finalTotal - validAmountPaid);
+      const finalTotal = money(totalMaterialAmount + deliveryCharge);
+      if (amountPaid > finalTotal || (paymentMode === 'UDHAAR' && amountPaid > 0) || (initialStatus === 'PENDING_APPROVAL' && amountPaid > 0)) {
+        throw fastify.httpErrors.badRequest('Invalid upfront payment for this order');
+      }
+      const validAmountPaid = amountPaid;
+      const balancePending = Math.max(0, money(finalTotal - validAmountPaid));
 
       let paymentStatus = 'PENDING';
       if (balancePending <= 0) {
@@ -825,7 +851,7 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
         paymentStatus = 'UDHAAR';
       }
 
-      const orderNumber = `KLK-MAN-${Date.now().toString().slice(-6)}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const orderNumber = `KLK-MAN-${randomUUID()}`;
       const challanNo =
         initialStatus === 'OUT_FOR_DELIVERY' || initialStatus === 'DELIVERED'
           ? `CHAL-${Date.now().toString().slice(-6)}`
@@ -833,6 +859,12 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
 
       // Execute entire walk-in / manual order flow inside an atomic transaction
       const order = await fastify.prisma.$transaction(async (tx) => {
+        await lockSupplier(tx, supplierId);
+        const previous = await tx.order.findUnique({ where: { supplierId_idempotencyKey: { supplierId, idempotencyKey } }, include: { customer: true, items: true, paymentRecords: true } });
+        if (previous) {
+          if (previous.requestHash !== requestHash) throw fastify.httpErrors.conflict('Order key already used for a different request');
+          return previous;
+        }
         let targetCustomerId = inputCustomerId;
 
         // If no customerId provided, resolve or create Customer record
@@ -847,13 +879,13 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
           });
 
           if (!user) {
-            const tempPasswordHash = await bcrypt.hash(`klink_walkin_${Date.now()}`, 10);
+            const tempPasswordHash = await bcrypt.hash(randomBytes(32).toString('hex'), 10);
             user = await tx.user.create({
               data: {
                 phone: customerPhone,
                 passwordHash: tempPasswordHash,
                 role: 'CUSTOMER',
-                mustChangePassword: true, // Marks account as claimable on Customer Marketplace registration
+                mustChangePassword: true, // Recovery requires administrator identity verification
                 customer: {
                   create: {
                     fullName: customerName,
@@ -877,40 +909,23 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
             });
             targetCustomerId = user.customer!.id;
           } else if (user.customer) {
+            const relationship = await tx.order.findFirst({ where: { supplierId, customerId: user.customer.id } });
+            if (!relationship) throw fastify.httpErrors.badRequest('Existing customers must place an order with this yard before phone-based manual orders can be entered');
             targetCustomerId = user.customer.id;
           } else {
-            const cust = await tx.customer.create({
-              data: {
-                userId: user.id,
-                fullName: customerName,
-                phone: customerPhone,
-                defaultDistrictId: supplier.districtId
-              }
-            });
-            targetCustomerId = cust.id;
+            throw fastify.httpErrors.badRequest('This phone belongs to a non-customer account');
           }
+        } else {
+          const customer = await tx.customer.findFirst({ where: { id: targetCustomerId, orders: { some: { supplierId } } } });
+          if (!customer) throw fastify.httpErrors.badRequest('Customer not found in this yard');
         }
 
-        // Verify and deduct stock for all items
-        for (const item of items) {
-          const sp = await tx.supplierProduct.findUnique({
-            where: { id: item.supplierProductId },
-            include: { masterProduct: true }
-          });
-          if (!sp || sp.stockQuantity < item.quantity) {
-            throw fastify.httpErrors.badRequest(
-              `Insufficient yard stock for ${sp?.masterProduct?.name || 'selected item'}. Available: ${sp?.stockQuantity || 0}, Required: ${item.quantity}`
-            );
-          }
-          await tx.supplierProduct.update({
-            where: { id: item.supplierProductId },
-            data: { stockQuantity: { decrement: item.quantity } }
-          });
-        }
+        if (initialStatus !== 'PENDING_APPROVAL') await reserveStock(tx, supplierId, items);
 
         // Create Order with items
         const createdOrder = await tx.order.create({
           data: {
+            idempotencyKey, requestHash,
             orderNumber,
             customerId: targetCustomerId!,
             supplierId,
@@ -999,15 +1014,11 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const challan = deliveryChallanNo || `CHAL-${Date.now().toString().slice(-6)}`;
 
       const updated = await fastify.prisma.$transaction(async (tx) => {
-        // Direct dispatch from PENDING_APPROVAL: deduct inventory stock if not already deducted
-        if (order.status === 'PENDING_APPROVAL') {
-          for (const item of order.items) {
-            await tx.supplierProduct.update({
-              where: { id: item.supplierProductId },
-              data: { stockQuantity: { decrement: item.quantity } }
-            });
-          }
-        }
+        await lockSupplier(tx, supplierId);
+        const order = await tx.order.findFirst({ where: { id, supplierId }, include: { items: true } });
+        if (!order) throw fastify.httpErrors.notFound('Order not found');
+        if (!['PENDING_APPROVAL', 'CONFIRMED', 'PREPARING'].includes(order.status)) throw fastify.httpErrors.badRequest(`Cannot dispatch ${order.status} order`);
+        if (order.status === 'PENDING_APPROVAL') await reserveStock(tx, supplierId, order.items);
 
         // Auto-assign vehicle status to ON_TRIP
         if (vehicleNumber) {
@@ -1068,6 +1079,10 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
       if (!order) return reply.status(404).send({ error: 'Order not found' });
 
       const updated = await fastify.prisma.$transaction(async (tx) => {
+        await lockSupplier(tx, supplierId);
+        const order = await tx.order.findFirst({ where: { id, supplierId }, include: { items: true } });
+        if (!order) throw fastify.httpErrors.notFound('Order not found');
+        if (order.status !== 'OUT_FOR_DELIVERY') throw fastify.httpErrors.badRequest('Only dispatched orders can be delivered');
         // Release vehicle back to AVAILABLE status upon delivery
         if (order.vehicleNumber) {
           await tx.supplierVehicle.updateMany({
@@ -1164,7 +1179,7 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
         body: z.object({
           customerId: z.string().min(1, 'Customer is required'),
           orderId: z.string().optional(),
-          amount: z.number().positive('Payment amount must be greater than 0'),
+          amount: z.number().positive().max(1_000_000_000).multipleOf(0.01),
           paymentMode: z.enum(['CASH', 'UPI_DIRECT', 'BANK_TRANSFER', 'CHEQUE', 'UDHAAR']),
           referenceNo: z.string().optional(),
           notes: z.string().optional()
@@ -1175,12 +1190,32 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const supplierId = getSupplierId(request);
       const { customerId, orderId, amount, paymentMode, referenceNo, notes } = request.body;
 
+      const keyResult = z.string().min(8).max(128).safeParse(request.headers['idempotency-key']);
+      if (!keyResult.success) throw fastify.httpErrors.badRequest('A unique Idempotency-Key header (8-128 characters) is required');
+      const idempotencyKey = keyResult.data;
+      const requestHash = createHash('sha256').update(JSON.stringify({ path: request.url, body: request.body })).digest('hex');
+      if (paymentMode === 'UDHAAR') throw fastify.httpErrors.badRequest('Udhaar is credit, not a payment received');
       const paymentNoteText = [referenceNo ? `Ref: ${referenceNo}` : null, notes].filter(Boolean).join(' | ');
 
       const result = await fastify.prisma.$transaction(async (tx) => {
+        await lockSupplier(tx, supplierId);
+        const previous = await tx.paymentRecord.findUnique({ where: { supplierId_idempotencyKey: { supplierId, idempotencyKey } } });
+        if (previous) {
+          if (previous.requestHash !== requestHash) throw fastify.httpErrors.conflict('Payment key already used for a different request');
+          return { payment: previous, order: orderId ? await tx.order.findUnique({ where: { id: orderId } }) : null, ledger: await recalculateCustomerLedger(tx, supplierId, customerId) };
+        }
+        const eligible = { supplierId, customerId, status: { in: acceptedStatuses } };
+        if (orderId) {
+          const order = await tx.order.findFirst({ where: { id: orderId, ...eligible } });
+          if (!order || amount > money(order.balancePending)) throw fastify.httpErrors.badRequest('Order/customer mismatch or payment exceeds outstanding balance');
+        } else {
+          const due = await tx.order.aggregate({ where: eligible, _sum: { balancePending: true } });
+          if (amount > money(due._sum.balancePending || 0)) throw fastify.httpErrors.badRequest('Payment exceeds outstanding balance for this yard');
+        }
         // 1. Create Payment Record
         const payment = await tx.paymentRecord.create({
           data: {
+            idempotencyKey, requestHash,
             supplierId,
             customerId,
             orderId: orderId || null,
@@ -1198,8 +1233,8 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
             where: { id: orderId, supplierId }
           });
           if (order) {
-            const newPaid = order.amountPaid + amount;
-            const newBalance = Math.max(0, order.finalTotal - newPaid);
+            const newPaid = money(order.amountPaid + amount);
+            const newBalance = Math.max(0, money(order.finalTotal - newPaid));
             const paymentStatus = newBalance <= 0 ? 'PAID' : 'PARTIALLY_PAID';
 
             updatedOrder = await tx.order.update({
@@ -1218,7 +1253,7 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
               supplierId,
               customerId,
               balancePending: { gt: 0 },
-              status: { notIn: ['CANCELLED', 'REJECTED'] }
+              status: { in: acceptedStatuses }
             },
             orderBy: { createdAt: 'asc' }
           });
@@ -1227,8 +1262,8 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
           for (const o of unpaidOrders) {
             if (remaining <= 0) break;
             const payTowardsOrder = Math.min(remaining, o.balancePending);
-            const newPaid = o.amountPaid + payTowardsOrder;
-            const newBal = o.balancePending - payTowardsOrder;
+            const newPaid = money(o.amountPaid + payTowardsOrder);
+            const newBal = money(o.balancePending - payTowardsOrder);
 
             await tx.order.update({
               where: { id: o.id },
@@ -1273,7 +1308,7 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
         where: { supplierId },
         include: {
           customer: {
-            include: { addresses: true }
+            include: { orders: { where: { supplierId }, orderBy: { createdAt: 'desc' }, take: 1, select: { deliveryAddress: true, landmark: true, pincode: true } } }
           }
         },
         orderBy: { customer: { fullName: 'asc' } }
@@ -1284,7 +1319,7 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
         where: { supplierId },
         select: {
           customer: {
-            include: { addresses: true }
+            include: { orders: { where: { supplierId }, orderBy: { createdAt: 'desc' }, take: 1, select: { deliveryAddress: true, landmark: true, pincode: true } } }
           }
         },
         distinct: ['customerId']
@@ -1297,9 +1332,9 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
           id: l.customer.id,
           fullName: l.customer.fullName,
           phone: l.customer.phone,
-          address: l.customer.addresses[0]?.addressLine || '',
-          landmark: l.customer.addresses[0]?.landmark || '',
-          pincode: l.customer.addresses[0]?.pincode || '',
+          address: l.customer.orders[0]?.deliveryAddress || '',
+          landmark: l.customer.orders[0]?.landmark || '',
+          pincode: l.customer.orders[0]?.pincode || '',
           outstandingBalance: l.outstandingBalance,
           totalPurchased: l.totalPurchased
         });
@@ -1311,9 +1346,9 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
             id: oc.customer.id,
             fullName: oc.customer.fullName,
             phone: oc.customer.phone,
-            address: oc.customer.addresses[0]?.addressLine || '',
-            landmark: oc.customer.addresses[0]?.landmark || '',
-            pincode: oc.customer.addresses[0]?.pincode || '',
+            address: oc.customer.orders[0]?.deliveryAddress || '',
+            landmark: oc.customer.orders[0]?.landmark || '',
+            pincode: oc.customer.orders[0]?.pincode || '',
             outstandingBalance: 0,
             totalPurchased: 0
           });

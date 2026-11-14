@@ -37,6 +37,8 @@ export function AppContent() {
       ? 'supplier'
       : appMode === 'ADMIN'
       ? 'admin'
+      : !isDemoMode && user
+      ? user.role === 'SUPPLIER' ? 'supplier' : user.role === 'ADMIN' ? 'admin' : 'customer'
       : navTab;
 
   const [successOrder, setSuccessOrder] = useState<any | null>(null);

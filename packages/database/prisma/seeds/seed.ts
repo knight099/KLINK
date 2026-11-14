@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
+  if (process.env.NODE_ENV === 'production' || process.env.ALLOW_DEMO_SEED !== 'true') throw new Error('Demo seed requires ALLOW_DEMO_SEED=true and is forbidden in production');
   console.log('🌱 Starting database seed for KLINK (Darbhanga Marketplace)...');
 
   // 1. Geo: State & Districts
@@ -977,7 +978,7 @@ async function main() {
         finalTotal: o4Total,
         amountPaid: 0,
         balancePending: o4Total,
-        status: 'PENDING',
+        status: 'PENDING_APPROVAL',
         paymentStatus: 'PENDING',
         deliveryAddress: 'Mithila Enclave Site, Benta, Darbhanga',
         landmark: 'Near DMCH Gate No 2',
@@ -1185,7 +1186,7 @@ async function main() {
         finalTotal: o7Total,
         amountPaid: 0,
         balancePending: o7Total,
-        status: 'PENDING',
+        status: 'PENDING_APPROVAL',
         paymentStatus: 'PENDING',
         deliveryAddress: 'Mithila Homes Project, Laheriasarai, Darbhanga',
         landmark: 'Near Polo Ground',
