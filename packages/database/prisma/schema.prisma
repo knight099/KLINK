@@ -270,3 +270,19 @@ model SupplierVehicle {
   supplier      Supplier  @relation(fields: [supplierId], references: [id])
 }
 
+
+model AuthRateLimit {
+  key       String   @id
+  count     Int
+  expiresAt DateTime @db.Timestamptz
+  @@index([expiresAt])
+}
+
+model LedgerReconciliation {
+  id        String   @id
+  ledgerId  String
+  reason    String
+  before    Json
+  after     Json
+  createdAt DateTime @default(now()) @db.Timestamptz
+}
