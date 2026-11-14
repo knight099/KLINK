@@ -72,9 +72,9 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
   return (
     <header className="sticky top-0 z-40 bg-stone-950/95 backdrop-blur-md border-b border-stone-800 text-stone-100 shadow-sm transition-all">
       <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex flex-wrap items-center justify-between gap-y-2 py-2 sm:h-16 sm:flex-nowrap sm:py-0">
           {/* Left: Brand Identity & Location Hub */}
-          <div className="flex items-center space-x-3 sm:space-x-4">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-4">
             <div
               onClick={() => {
                 if (appMode === 'CUSTOMER' || appMode === 'UNIFIED') {
@@ -222,7 +222,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
           )}
 
           {/* Right: Auth Controls & Shopping Cart */}
-          <div className="flex items-center space-x-2.5 sm:space-x-3.5">
+          <div className="ml-auto flex items-center space-x-2.5 sm:space-x-3.5">
             {isDemoMode ? (
               <div className="relative" ref={personaRef}>
                 <button
