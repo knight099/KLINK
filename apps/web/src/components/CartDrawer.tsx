@@ -48,7 +48,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
   const [sitePhone, setSitePhone] = useState(user?.phone || '');
   const [instructions, setInstructions] = useState('Call 30 mins before arrival. Site entrance is wide for tractor/truck.');
   const [paymentChoice, setPaymentChoice] = useState<'COD' | 'UPI' | 'UDHAAR'>('COD');
-  const [advanceAmount, setAdvanceAmount] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
@@ -140,7 +139,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
         deliveryAddress: addressLine,
         landmark,
         pincode: pincode.trim() || '846001',
-        deliveryInstructions: `${instructions} [Preferred Payment: ${paymentChoice}${advanceAmount > 0 ? `, Advance Token Paid: ₹${advanceAmount}` : ''}]`,
+        deliveryInstructions: `${instructions} [Preferred Payment: ${paymentChoice}]`,
         siteContactPhone: sitePhone || user?.phone || '9123456789'
       };
 
@@ -334,47 +333,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                   </div>
                 </div>
 
-                {/* Advance Amount Custom Input */}
-                <div className="bg-white border border-stone-200 rounded-xl p-3 text-xs space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-stone-700">Advance Amount (Optional)</span>
-                    <span className="text-[10px] text-stone-400 font-mono">₹ 0 = Full balance on dump</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="relative flex-1">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 font-mono text-xs">₹</span>
-                      <input
-                        type="number"
-                        min="0"
-                        max={finalTotal}
-                        value={advanceAmount || ''}
-                        placeholder="0"
-                        onChange={(e) => setAdvanceAmount(Math.min(finalTotal, Math.max(0, parseInt(e.target.value) || 0)))}
-                        className="w-full pl-7 pr-3 py-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs font-mono font-medium text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-800"
-                      />
-                    </div>
-                    {[2000, 5000, 10000].map((preset) => (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => setAdvanceAmount(Math.min(finalTotal, preset))}
-                        className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-mono transition-colors ${
-                          advanceAmount === preset
-                            ? 'bg-stone-900 text-white border-stone-900'
-                            : 'border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700'
-                        }`}
-                      >
-                        ₹{preset >= 1000 ? `${preset / 1000}k` : preset}
-                      </button>
-                    ))}
-                  </div>
-                  {advanceAmount > 0 && (
-                    <div className="flex justify-between text-[11px] font-mono text-stone-600 pt-1.5 border-t border-stone-100">
-                      <span>Advance: <strong className="text-stone-900 tabular-nums">₹{advanceAmount.toLocaleString('en-IN')}</strong></span>
-                      <span>Balance Due: <strong className="text-stone-900 tabular-nums">₹{(finalTotal - advanceAmount).toLocaleString('en-IN')}</strong></span>
-                    </div>
-                  )}
-                </div>
+                <p className="text-xs text-stone-500">
+                  This is your payment preference. No payment is collected at checkout.
+                  The full order amount remains due until the yard records a received payment.
+                </p>
               </div>
 
               {/* Delivery Site Details Form */}

@@ -1,3 +1,4 @@
+import { recalculateCustomerLedger } from '../src/lib/ledger';
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import bcrypt from 'bcryptjs';
@@ -179,4 +180,39 @@ test('customer order completes acceptance, dispatch, delivery and payment with c
  assert.equal(paid.statusCode,200,paid.body);assert.equal(paid.json().order.balancePending,0);
  assert.equal(paid.json().order.paymentStatus,'PAID');
  assert.equal((await app.prisma.supplierProduct.findUniqueOrThrow({where:{id:ids.product}})).stockQuantity,9);
+});
+
+test('ledger totals use accepted orders and receipts, excluding legacy pending quotes', async () => {
+  const pending = await order('PENDING', 2);
+  try {
+    const result = await app.prisma.$transaction(async tx => {
+      const expected = await tx.order.aggregate({ where: { supplierId: ids.supplierProfile, customerId: ids.customerProfile, status: { in: ['CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'COMPLETED'] } }, _sum: { finalTotal: true } });
+      const ledger = await recalculateCustomerLedger(tx, ids.supplierProfile, ids.customerProfile);
+      return { expected: expected._sum.finalTotal || 0, actual: ledger.totalPurchased };
+    });
+    assert.equal(result.actual, result.expected);
+  } finally { await app.prisma.orderItem.deleteMany({where:{orderId:pending.id}}); await app.prisma.order.delete({where:{id:pending.id}}); }
+});
+
+test('ledger reconciliation previews, audits repairs and is idempotent', async () => {
+  const { reconcileLedgers } = await import('../src/lib/ledger');
+  const ledger = await app.prisma.customerLedger.upsert({ where: { supplierId_customerId: { supplierId: ids.supplierProfile, customerId: ids.customerProfile } }, create: {supplierId: ids.supplierProfile, customerId: ids.customerProfile, totalPurchased: 999999}, update: { totalPurchased: 999999 } });
+  const preview = await reconcileLedgers(app.prisma, 'Test preview');
+  assert.ok(preview.some(row => row.ledgerId === ledger.id));
+  assert.equal((await app.prisma.customerLedger.findUniqueOrThrow({where:{id:ledger.id}})).totalPurchased, 999999);
+  await reconcileLedgers(app.prisma, 'Test authorized repair', true);
+  const audit = await app.prisma.$queryRaw<{reason:string}[]>`SELECT reason FROM "LedgerReconciliation" WHERE "ledgerId"=${ledger.id}`;
+  assert.equal(audit.length, 1);
+  assert.equal(audit[0].reason, 'Test authorized repair');
+  assert.equal((await reconcileLedgers(app.prisma, 'Test repeat', true)).length, 0);
+});
+
+test('reconciliation creates missing ledgers for accepted orders and receipts', async () => {
+  const { reconcileLedgers } = await import('../src/lib/ledger');
+  await app.prisma.customerLedger.deleteMany({where:{supplierId:ids.supplierProfile,customerId:ids.customerProfile}});
+  const preview = await reconcileLedgers(app.prisma, 'Missing ledger preview');
+  assert.ok(preview.some(row => row.before === null && row.after.totalPurchased > 0));
+  await reconcileLedgers(app.prisma, 'Missing ledger repair', true);
+  assert.ok(await app.prisma.customerLedger.findUnique({where:{supplierId_customerId:{supplierId:ids.supplierProfile,customerId:ids.customerProfile}}}));
+  assert.equal((await reconcileLedgers(app.prisma, 'Repeat', true)).length, 0);
 });

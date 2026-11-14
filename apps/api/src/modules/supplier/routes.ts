@@ -1,3 +1,4 @@
+import { recalculateCustomerLedger } from '../../lib/ledger';
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import { lockSupplier, reserveStock, canTransition, money, acceptedStatuses } from '../../lib/orders';
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
@@ -26,73 +27,6 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
       throw fastify.httpErrors.forbidden('User does not have an associated supplier tenant');
     }
     return supplierId;
-  };
-
-  // Helper to atomically recalculate and persist accurate Customer Ledger balances (eliminates double-counting)
-  const recalculateCustomerLedger = async (
-    tx: any,
-    supplierId: string,
-    customerId: string
-  ) => {
-    // Active accepted orders (exclude unapproved quotes, cancelled, and rejected)
-    const orderSum = await tx.order.aggregate({
-      where: {
-        supplierId,
-        customerId,
-        status: { notIn: ['PENDING_APPROVAL', 'CANCELLED', 'REJECTED'] }
-      },
-      _sum: { finalTotal: true }
-    });
-
-    const paymentSum = await tx.paymentRecord.aggregate({
-      where: {
-        supplierId,
-        customerId
-      },
-      _sum: { amount: true }
-    });
-
-    const totalPurchased = money(orderSum._sum.finalTotal || 0);
-    const totalPaid = money(paymentSum._sum.amount || 0);
-    const outstandingBalance = Math.max(0, money(totalPurchased - totalPaid));
-
-    const lastOrder = await tx.order.findFirst({
-      where: {
-        supplierId,
-        customerId,
-        status: { notIn: ['PENDING_APPROVAL', 'CANCELLED', 'REJECTED'] }
-      },
-      orderBy: { createdAt: 'desc' },
-      select: { createdAt: true }
-    });
-
-    const lastPayment = await tx.paymentRecord.findFirst({
-      where: { supplierId, customerId },
-      orderBy: { recordedAt: 'desc' },
-      select: { recordedAt: true }
-    });
-
-    return tx.customerLedger.upsert({
-      where: {
-        supplierId_customerId: { supplierId, customerId }
-      },
-      update: {
-        totalPurchased,
-        totalPaid,
-        outstandingBalance,
-        lastOrderDate: lastOrder?.createdAt || null,
-        lastPaymentDate: lastPayment?.recordedAt || null
-      },
-      create: {
-        supplierId,
-        customerId,
-        totalPurchased,
-        totalPaid,
-        outstandingBalance,
-        lastOrderDate: lastOrder?.createdAt || null,
-        lastPaymentDate: lastPayment?.recordedAt || null
-      }
-    });
   };
 
   // 1. Supplier Dashboard (Roadmap Section 15)
