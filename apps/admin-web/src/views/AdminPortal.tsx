@@ -1,5 +1,5 @@
-import { useLanguage, FormError, OrderStatus, PaymentStatus, signInFailure, type FormFailure } from '@klink/ui';
-import React, { useState, useEffect } from 'react';
+import { useLanguage, FormError, OrderStatus, PaymentStatus, FormNotice, SignInDialog, signInFailure, type FormFailure } from '@klink/ui';
+import React, { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
 import { useDistrict } from '../lib/district-context';
@@ -43,7 +43,7 @@ interface AdminPortalProps {
 }
 
 export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { user, switchPersona, isDemoMode, login } = useAuth();
   const { districts } = useDistrict();
 
@@ -81,6 +81,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
   const [customers, setCustomers] = useState<any[]>([]);
   const [customersLoading, setCustomersLoading] = useState(false);
   const [customerSearch, setCustomerSearch] = useState('');
+  const [tracedCustomerId, setTracedCustomerId] = useState<string | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<any | null>(null);
   const [editCustName, setEditCustName] = useState('');
   const [editCustPhone, setEditCustPhone] = useState('');
@@ -124,7 +125,17 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
   // Payments & Financial Audit State
   const [payments, setPayments] = useState<any[]>([]);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [paymentsError, setPaymentsError] = useState(false);
   const [paymentSearch, setPaymentSearch] = useState('');
+
+  const [attentionOrders, setAttentionOrders] = useState<any[] | null>(null);
+  const [attentionError, setAttentionError] = useState(false);
+  const [suppliersLoading, setSuppliersLoading] = useState(true);
+  const [suppliersError, setSuppliersError] = useState(false);
+  const [supplierChange, setSupplierChange] = useState<{ id: string; businessName: string; phone: string; status: string } | null>(null);
+  const [supplierChangeError, setSupplierChangeError] = useState<FormFailure | null>(null);
+  const [isChangingSupplier, setIsChangingSupplier] = useState(false);
+  const supplierChangeInFlight = useRef(false);
 
   // Master Catalog Filter States
   const [catalogSearch, setCatalogSearch] = useState('');
@@ -170,11 +181,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
   };
 
   const loadSuppliers = async () => {
+    setSuppliersLoading(true);
+    setSuppliersError(false);
     try {
       const res = await apiFetch<any>('/admin/suppliers');
       setSuppliers(res.suppliers || []);
-    } catch (e) {
-      console.error(e);
+    } catch {
+      setSuppliersError(true);
+    } finally {
+      setSuppliersLoading(false);
     }
   };
 
@@ -196,8 +211,25 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
     }
   };
 
+  const orderRequest = useRef(0);
+  const customerRequest = useRef(0);
+  const orderSearchField = useRef<HTMLInputElement>(null);
+  const customerSearchField = useRef<HTMLInputElement>(null);
+  const contextualFocus = useRef<'orders' | 'consumers' | null>(null);
+  useEffect(() => {
+    if (subTab === 'orders' && contextualFocus.current === 'orders') {
+      orderSearchField.current?.focus();
+      contextualFocus.current = null;
+    } else if (subTab === 'consumers' && contextualFocus.current === 'consumers') {
+      customerSearchField.current?.focus();
+      contextualFocus.current = null;
+    }
+  }, [subTab]);
+
   const loadOrders = async () => {
+    const request = ++orderRequest.current;
     setOrdersLoading(true);
+    setOrders([]);
     try {
       let url = '/admin/orders';
       const params = new URLSearchParams();
@@ -206,25 +238,25 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
       const queryStr = params.toString();
       if (queryStr) url += `?${queryStr}`;
       const res = await apiFetch<any>(url);
-      setOrders(res.orders || []);
+      if (request === orderRequest.current) setOrders(res.orders || []);
     } catch (e) {
       console.error(e);
     } finally {
-      setOrdersLoading(false);
+      if (request === orderRequest.current) setOrdersLoading(false);
     }
   };
 
   const loadCustomers = async () => {
+    const request = ++customerRequest.current;
     setCustomersLoading(true);
+    setCustomers([]);
     try {
-      let url = '/admin/customers';
-      if (customerSearch.trim()) url += `?search=${encodeURIComponent(customerSearch.trim())}`;
-      const res = await apiFetch<any>(url);
-      setCustomers(res.customers || []);
+      const res = await apiFetch<any>('/admin/customers');
+      if (request === customerRequest.current) setCustomers(res.customers || []);
     } catch (e) {
       console.error(e);
     } finally {
-      setCustomersLoading(false);
+      if (request === customerRequest.current) setCustomersLoading(false);
     }
   };
 
@@ -256,30 +288,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
 
   const loadPayments = async () => {
     setPaymentsLoading(true);
+    setPaymentsError(false);
     try {
       const res = await apiFetch<any>('/admin/payments');
       setPayments(res.payments || []);
     } catch (e) {
+      setPaymentsError(true);
       console.error('Failed to load payments:', e);
     } finally {
       setPaymentsLoading(false);
     }
   };
 
-  const handleDeletePayment = async (paymentId: string) => {
-    if (!window.confirm('Are you sure you want to delete this payment record? This will adjust the customer ledger upon next transaction.')) {
-      return;
-    }
-    try {
-      await apiFetch(`/admin/payments/${paymentId}`, { method: 'DELETE' });
-      await loadPayments();
-      await loadMetrics();
-    } catch (e: any) {
-      alert(e.message || 'Failed to delete payment record');
-    }
-  };
-
-  const handleToggleDistrict = async (districtId: string, currentStatus: boolean) => {
+  const handleToggleDistrict = async (districtId: string, districtName: string, currentStatus: boolean) => {
+    if (!window.confirm(`${t('Confirm status change')}: ${districtName}`)) return;
     try {
       await apiFetch(`/geo/districts/${districtId}`, {
         method: 'PATCH',
@@ -323,19 +345,47 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
     }
   }, [districts]);
 
-  const handleToggleSupplierStatus = async (supplierId: string, currentStatus: string) => {
-    const nextStatus = currentStatus === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
+  useEffect(() => {
+    if (user?.role !== 'ADMIN' || subTab !== 'overview') return;
+    const controller = new AbortController();
+    setAttentionError(false);
+    setAttentionOrders(null);
+    apiFetch<{ orders: any[] }>('/admin/orders?status=PENDING_APPROVAL', { signal: controller.signal })
+      .then(({ orders }) => { if (!controller.signal.aborted) setAttentionOrders(orders); })
+      .catch(() => { if (!controller.signal.aborted) setAttentionError(true); });
+    return () => controller.abort();
+  }, [user?.id, user?.role, subTab]);
+
+  const openSupplierChange = (supplier: { id: string; businessName: string; phone: string; status: string }) => {
+    setSupplierChangeError(null);
+    setSupplierChange(supplier);
+  };
+
+  const confirmSupplierChange = async () => {
+    if (!supplierChange || supplierChangeInFlight.current) return;
+    supplierChangeInFlight.current = true;
+    setIsChangingSupplier(true);
+    setSupplierChangeError(null);
     try {
-      await apiFetch(`/admin/suppliers/${supplierId}/status`, {
+      await apiFetch(`/admin/suppliers/${supplierChange.id}/status`, {
         method: 'PATCH',
-        body: JSON.stringify({ status: nextStatus })
+        body: JSON.stringify({ status: supplierChange.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE' })
       });
-      loadSuppliers();
-      loadMetrics();
-    } catch (e: any) {
-      alert(e.message || 'Failed to update supplier status');
+      await Promise.all([loadSuppliers(), loadMetrics()]);
+      setSupplierChange(null);
+    } catch (error) {
+      setSupplierChangeError({
+        message: error instanceof Error ? error.message : undefined,
+        fallback: 'Supplier status could not be updated.'
+      });
+    } finally {
+      supplierChangeInFlight.current = false;
+      setIsChangingSupplier(false);
     }
   };
+
+  const supplierAction = (status: string) => status === 'ACTIVE' ? 'Suspend supplier'
+    : status === 'PENDING_APPROVAL' ? 'Approve supplier' : 'Reactivate supplier';
 
   const handleCreateMasterProduct = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -394,7 +444,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
   };
 
   const handleDeleteMasterProduct = async (prodId: string, prodName: string) => {
-    if (!confirm(`Are you sure you want to deactivate "${prodName}" from the master catalogue?`)) {
+    if (!confirm(`${t('Deactivate this catalog item?')}\n${prodName}`)) {
       return;
     }
     try {
@@ -668,7 +718,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
   };
 
   const handleDeleteUser = async (usr: any) => {
-    if (!confirm(`Are you sure you want to permanently delete user account +91 ${usr.phone}? This action cannot be undone.`)) {
+    if (!confirm(`${t('Confirm account deletion')}: +91 ${usr.phone}\n${t('Cannot undo account deletion.')}`)) {
       return;
     }
     try {
@@ -784,6 +834,27 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
     );
   }
 
+  const pendingSuppliers = suppliers.filter((supplier) => supplier.status === 'PENDING_APPROVAL');
+  const customerQuery = customerSearch.trim().toLowerCase();
+  const visibleCustomers = customers.filter((customer) => tracedCustomerId !== null
+    ? customer.id === tracedCustomerId
+    : [customer.fullName, customer.phone].some((value) => value?.toLowerCase().includes(customerQuery)));
+  const visiblePayments = payments.filter((payment) => {
+    const query = paymentSearch.trim().toLowerCase();
+    return !query || [payment.id, payment.customer?.fullName, payment.customer?.phone,
+      payment.supplier?.businessName, payment.order?.orderNumber, payment.notes, payment.paymentMode]
+      .some((value) => typeof value === 'string' && value.toLowerCase().includes(query));
+  });
+
+  const findOrder = (orderNumber: string) => {
+    ++orderRequest.current;
+    setOrdersLoading(true);
+    contextualFocus.current = 'orders';
+    setOrderSearch(orderNumber);
+    setOrderStatusFilter('ALL');
+    setSubTab('orders');
+  };
+
   return (
     <div className="pb-28 pt-4 w-full px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16 space-y-6 animate-in fade-in duration-200">
       
@@ -815,7 +886,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
         </div>
 
         {/* Subtabs Bar */}
-        <div className="flex items-center flex-wrap gap-1 bg-stone-850 border border-stone-750 p-1 rounded-xl">
+        <nav aria-label={t('Main navigation')} className="flex items-center flex-wrap gap-1 bg-stone-850 border border-stone-750 p-1 rounded-xl">
           <button
             onClick={() => setSubTab('overview')}
             aria-current={subTab === 'overview' ? 'page' : undefined}
@@ -823,7 +894,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               subTab === 'overview' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            {t('GMV Ops')}
+            {t('Overview')}
           </button>
           <button
             onClick={() => setSubTab('orders')}
@@ -832,7 +903,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               subTab === 'orders' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            {t('Orders & Rescue')} {orders.length > 0 ? `(${orders.length})` : ''}
+            {t('Orders')}
           </button>
           <button
             onClick={() => setSubTab('suppliers')}
@@ -841,7 +912,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               subTab === 'suppliers' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            Yards & Dealers ({suppliers.length})
+            {t('Suppliers')}
           </button>
           <button
             onClick={() => setSubTab('consumers')}
@@ -850,7 +921,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               subTab === 'consumers' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            {t('Buyers & Udhaar')} {customers.length > 0 ? `(${customers.length})` : ''}
+            {t('Customers')}
           </button>
           <button
             onClick={() => setSubTab('payments')}
@@ -859,7 +930,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               subTab === 'payments' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            {t('Payments Audit')} {payments.length > 0 ? `(${payments.length})` : ''}
+            {t('Payments')}
           </button>
           <button
             onClick={() => setSubTab('users')}
@@ -868,7 +939,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               subTab === 'users' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            {t('User Logins')} {usersList.length > 0 ? `(${usersList.length})` : ''}
+            {t('Accounts')}
           </button>
           <button
             onClick={() => setSubTab('catalog')}
@@ -877,14 +948,60 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               subTab === 'catalog' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            Master Catalog ({masterProducts.length})
+            {t('Catalog maintenance')}
           </button>
-        </div>
+        </nav>
       </div>
 
       {/* OVERVIEW TAB */}
       {subTab === 'overview' && (
         <div className="space-y-6">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <section className="min-w-0 space-y-3 rounded-xl border border-stone-200 bg-white p-4">
+              <h2 className="text-lg font-semibold">{t('Pending supplier approvals')}</h2>
+              {suppliersLoading ? <p role="status">{t('Loading suppliers…')}</p>
+                : suppliersError ? <FormNotice error>{t('Suppliers could not be loaded.')}</FormNotice>
+                : pendingSuppliers.length === 0 ? <p>{t('No supplier approvals pending')}</p>
+                : <ul className="divide-y divide-stone-200">
+                  {pendingSuppliers.slice(0, 5).map((supplier) => (
+                    <li key={supplier.id} className="flex flex-wrap items-center justify-between gap-x-3 py-2">
+                      <span className="min-w-0 break-words text-sm font-medium">{supplier.businessName}</span>
+                      <button type="button" className="min-h-11 text-sm underline" onClick={() => openSupplierChange(supplier)}
+                        aria-label={`${t('Review supplier')} ${supplier.businessName}`}>{t('Review supplier')}</button>
+                    </li>
+                  ))}
+                </ul>}
+              {pendingSuppliers.length > 5 && <button type="button" className="min-h-11 text-sm underline" onClick={() => setSubTab('suppliers')}>{t('Suppliers')} ({pendingSuppliers.length})</button>}
+            </section>
+            <section className="min-w-0 space-y-3 rounded-xl border border-stone-200 bg-white p-4">
+              <h2 className="text-lg font-semibold">{t('Orders needing attention')}</h2>
+              {attentionError ? <FormNotice error>{t('Orders could not be loaded.')}</FormNotice>
+                : attentionOrders === null ? <p role="status">{t('Loading orders…')}</p>
+                : attentionOrders.length === 0 ? <p>{t('No orders awaiting confirmation')}</p>
+                : <>
+                  <ul className="divide-y divide-stone-200">
+                    {attentionOrders.slice(0, 5).map((order) => (
+                      <li key={order.id} className="flex flex-wrap items-center justify-between gap-x-3 py-2">
+                        <div className="min-w-0 break-words text-sm">
+                          <p className="font-medium">{order.orderNumber}</p>
+                          <p className="text-stone-700">{order.customer?.fullName}</p>
+                        </div>
+                        <button type="button" className="min-h-11 text-sm underline" onClick={() => findOrder(order.orderNumber)}
+                          aria-label={`${t('Open order')} ${order.orderNumber}`}>{t('Open order')}</button>
+                      </li>
+                    ))}
+                  </ul>
+                  <button type="button" className="min-h-11 text-sm underline" onClick={() => {
+                    ++orderRequest.current;
+                    setOrdersLoading(true);
+                    contextualFocus.current = 'orders';
+                    setOrderSearch('');
+                    setOrderStatusFilter('PENDING_APPROVAL');
+                    setSubTab('orders');
+                  }}>{t('View orders awaiting confirmation')}</button>
+                </>}
+            </section>
+          </div>
           <div className="bg-white rounded-xl border border-stone-200/90 divide-y sm:divide-y-0 sm:divide-x divide-stone-200/90 shadow-subtle grid grid-cols-2 lg:grid-cols-4 overflow-hidden">
             
             <div className="p-5">
@@ -893,7 +1010,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                 <TrendingUp className="w-3.5 h-3.5 text-stone-400" />
               </div>
               <div className="text-2xl font-bold font-mono text-stone-900 mt-2 tabular-nums">
-                ₹{(metrics?.grossMarketplaceValue || 124500).toLocaleString('en-IN')}
+                ₹{(metrics?.grossMarketplaceValue ?? 0).toLocaleString('en-IN')}
               </div>
               <p className="text-[11px] text-stone-500 mt-1">Total marketplace GMV</p>
             </div>
@@ -904,7 +1021,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                 <Package className="w-3.5 h-3.5 text-stone-400" />
               </div>
               <div className="text-2xl font-bold font-mono text-stone-900 mt-2 tabular-nums">
-                {metrics?.totalOrders || 3}
+                {metrics?.totalOrders ?? 0}
               </div>
               <p className="text-[11px] text-stone-500 mt-1">Processed across platform</p>
             </div>
@@ -918,10 +1035,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                 <Store className="w-3.5 h-3.5 text-stone-400 group-hover:text-stone-700" />
               </div>
               <div className="text-2xl font-bold font-mono text-stone-900 mt-2 tabular-nums">
-                {metrics?.activeSuppliers || suppliers.length || 2}
+                {metrics?.activeSuppliers ?? suppliers.filter((supplier) => supplier.status === 'ACTIVE').length}
               </div>
               <p className="text-[11px] text-stone-500 mt-1">
-                Darbhanga verified dealers
+                {t('Suppliers')}
               </p>
             </div>
 
@@ -934,10 +1051,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                 <Layers className="w-3.5 h-3.5 text-stone-400 group-hover:text-stone-700" />
               </div>
               <div className="text-2xl font-bold font-mono text-stone-900 mt-2 tabular-nums">
-                {masterProducts.length || 38}
+                {masterProducts.length}
               </div>
               <p className="text-[11px] text-stone-500 mt-1">
-                6 Standard Categories
+                {categories.length}
               </p>
             </div>
 
@@ -961,7 +1078,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                       </p>
                     </div>
                     <button
-                      onClick={() => handleToggleDistrict(dist.id, isLive)}
+                      onClick={() => handleToggleDistrict(dist.id, dist.name, isLive)}
                       title={`Click to ${isLive ? 'pause' : 'activate'} ${dist.name} district`}
                       className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-medium transition-colors cursor-pointer border ${
                         isLive
@@ -993,7 +1110,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                 </span>
               </div>
               <h2 className="text-sm sm:text-base font-semibold tracking-tight text-stone-900 mt-1">
-                All Orders & Emergency Overrides
+                {t('Orders')}
               </h2>
               <p className="text-xs text-stone-500">
                 Fix mistaken cancellations, change addresses, reassign transport vehicles or adjust pending Udhaar
@@ -1006,7 +1123,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                 className="px-3 py-1.5 rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-mono flex items-center space-x-1.5 cursor-pointer"
               >
                 <RotateCcw className={`w-3.5 h-3.5 ${ordersLoading ? 'animate-spin' : ''}`} />
-                <span>Refresh</span>
+                <span>{t('Refresh')}</span>
               </button>
             </div>
           </div>
@@ -1017,7 +1134,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search by Order ID, Buyer phone, delivery address, driver..."
+                ref={orderSearchField}
+                aria-label={t('Search orders')}
+                placeholder={t('Search orders')}
                 value={orderSearch}
                 onChange={(e) => setOrderSearch(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && loadOrders()}
@@ -1028,39 +1147,40 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
             <div className="flex items-center space-x-2">
               <Filter className="w-3.5 h-3.5 text-stone-400" />
               <select
+                aria-label={t('Order status')}
                 value={orderStatusFilter}
                 onChange={(e) => setOrderStatusFilter(e.target.value)}
                 className="px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900 bg-white"
               >
-                <option value="ALL">All Statuses</option>
-                <option value="PENDING_APPROVAL">Pending Approval</option>
-                <option value="CONFIRMED">Confirmed</option>
-                <option value="PREPARING">Preparing</option>
-                <option value="OUT_FOR_DELIVERY">Out for Delivery</option>
-                <option value="DELIVERED">Delivered</option>
-                <option value="COMPLETED">Completed</option>
-                <option value="CANCELLED">Cancelled</option>
-                <option value="REJECTED">Rejected</option>
+                <option value="ALL">{t('All orders')}</option>
+                <option value="PENDING_APPROVAL">{t('Awaiting confirmation')}</option>
+                <option value="CONFIRMED">{t('Confirmed')}</option>
+                <option value="PREPARING">{t('Preparing')}</option>
+                <option value="OUT_FOR_DELIVERY">{t('Out for delivery')}</option>
+                <option value="DELIVERED">{t('Delivered')}</option>
+                <option value="COMPLETED">{t('Completed')}</option>
+                <option value="CANCELLED">{t('Cancelled')}</option>
+                <option value="REJECTED">{t('Declined')}</option>
               </select>
 
               <button
                 onClick={loadOrders}
                 className="px-3 py-2 rounded-lg bg-stone-900 text-white text-xs font-mono hover:bg-stone-800 cursor-pointer"
               >
-                Apply
+                {t('Apply filters')}
               </button>
             </div>
           </div>
 
           {/* Orders List */}
-          {ordersLoading && orders.length === 0 ? (
+          {ordersLoading ? (
             <div className="p-12 text-center text-xs font-mono text-stone-500 bg-white rounded-xl border border-stone-200">
-              Loading platform orders...
+              {t('Loading orders…')}
             </div>
           ) : orders.length === 0 ? (
             <div className="p-12 text-center text-xs text-stone-500 bg-white rounded-xl border border-stone-200 space-y-1">
               <Package className="w-8 h-8 text-stone-300 mx-auto mb-2" />
-              <p className="font-semibold text-stone-700">No orders found matching filters</p>
+              <p className="font-semibold text-stone-700">{t('No matching orders')}</p>
               <p>Try searching for a different keyword or resetting status filter.</p>
             </div>
           ) : (
@@ -1076,7 +1196,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 pb-3">
                       <div className="flex items-center space-x-2.5 flex-wrap">
                         <span className="font-mono font-bold text-xs text-stone-900">
-                          #{ord.id.slice(-8).toUpperCase()}
+                          {ord.orderNumber || ord.id}
                         </span>
                         <span className="text-[11px] font-mono text-stone-400">
                           {new Date(ord.createdAt).toLocaleDateString('en-IN', {
@@ -1115,7 +1235,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                           className="px-2.5 py-1 rounded-lg text-xs font-mono font-medium text-stone-800 bg-stone-100 hover:bg-stone-200 border border-stone-200 flex items-center space-x-1.5 transition-colors cursor-pointer"
                         >
                           <Wrench className="w-3.5 h-3.5 text-stone-600" />
-                          <span>Fix / Override</span>
+                          <span>{t('Edit order')}</span>
                         </button>
                       </div>
                     </div>
@@ -1212,7 +1332,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h2 className="text-sm sm:text-base font-semibold tracking-tight text-stone-900">Registered Local Suppliers</h2>
+              <h2 className="text-sm sm:text-base font-semibold tracking-tight text-stone-900">{t('Suppliers')}</h2>
               <p className="text-xs text-stone-500">Admin controlled onboarding, credentials, stock overrides & store configuration</p>
             </div>
             
@@ -1221,7 +1341,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               className="px-3.5 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-mono font-medium text-xs flex items-center space-x-1.5 shadow-2xs transition-colors cursor-pointer"
             >
               <UserPlus className="w-3.5 h-3.5" />
-              <span>+ Onboard New Supplier</span>
+              <span>{t('Add supplier')}</span>
             </button>
           </div>
 
@@ -1268,7 +1388,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                     title="Edit Yard Profile, Address, GSTIN & Contact"
                   >
                     <Edit2 className="w-3 h-3" />
-                    <span>Edit Profile</span>
+                    <span>{t('Edit supplier profile')}</span>
                   </button>
 
                   <button
@@ -1277,18 +1397,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                     title="Inspect & Override Yard Catalog Rates, Carriage Fees & Stock"
                   >
                     <Package className="w-3 h-3" />
-                    <span>Manage Stock & Rates</span>
+                    <span>{t('Manage stock and prices')}</span>
                   </button>
 
                   <button
-                    onClick={() => handleToggleSupplierStatus(sup.id, sup.status)}
+                    onClick={() => openSupplierChange(sup)}
                     className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-colors cursor-pointer ${
                       sup.status === 'ACTIVE'
                         ? 'bg-white text-rose-700 hover:bg-rose-50 border border-rose-200'
                         : 'bg-stone-900 text-white hover:bg-stone-800'
                     }`}
                   >
-                    {sup.status === 'ACTIVE' ? 'Suspend Supplier' : 'Approve & Activate'}
+                    {t(supplierAction(sup.status))}
                   </button>
                 </div>
               </div>
@@ -1323,7 +1443,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               className="px-3 py-1.5 rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-mono flex items-center space-x-1.5 cursor-pointer"
             >
               <RotateCcw className={`w-3.5 h-3.5 ${customersLoading ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
+              <span>{t('Refresh')}</span>
             </button>
           </div>
 
@@ -1333,9 +1453,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search contractor name or mobile number..."
+                ref={customerSearchField}
+                aria-label={t('Search customers')}
+                placeholder={t('Search customers')}
                 value={customerSearch}
-                onChange={(e) => setCustomerSearch(e.target.value)}
+                onChange={(e) => { setTracedCustomerId(null); setCustomerSearch(e.target.value); }}
                 onKeyDown={(e) => e.key === 'Enter' && loadCustomers()}
                 className="w-full pl-9 pr-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
               />
@@ -1344,16 +1466,16 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               onClick={loadCustomers}
               className="px-4 py-2 rounded-lg bg-stone-900 text-white text-xs font-mono hover:bg-stone-800 cursor-pointer"
             >
-              Search
+              {t('Search')}
             </button>
           </div>
 
           {/* Customer List */}
-          {customersLoading && customers.length === 0 ? (
+          {customersLoading ? (
             <div className="p-12 text-center text-xs font-mono text-stone-500 bg-white rounded-xl border border-stone-200">
               Loading buyers...
             </div>
-          ) : customers.length === 0 ? (
+          ) : visibleCustomers.length === 0 ? (
             <div className="p-12 text-center text-xs text-stone-500 bg-white rounded-xl border border-stone-200 space-y-1">
               <Users className="w-8 h-8 text-stone-300 mx-auto mb-2" />
               <p className="font-semibold text-stone-700">No buyers found</p>
@@ -1361,7 +1483,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
             </div>
           ) : (
             <div className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-subtle divide-y divide-stone-100">
-              {customers.map((c) => (
+              {visibleCustomers.map((c) => (
                 <div key={c.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-stone-50/60 transition-colors">
                   <div className="space-y-1">
                     <div className="flex items-center space-x-2">
@@ -1372,11 +1494,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                       </span>
                     </div>
 
-                    <div className="flex items-center space-x-4 text-xs font-mono text-stone-500 pt-1">
-                      <span>Total Orders: <strong className="text-stone-800">{c.totalOrders || 0}</strong></span>
-                      <span>Lifetime Spend: <strong className="text-stone-800">₹{(c.totalSpend || 0).toLocaleString('en-IN')}</strong></span>
+                    <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-stone-500 pt-1">
+                      <span>{t('Total orders')}: <strong className="text-stone-800">{c.totalOrders || 0}</strong></span>
+                      <span>{t('Lifetime spend')}: <strong className="text-stone-800">₹{(c.totalSpend || 0).toLocaleString('en-IN')}</strong></span>
                       <span className="flex items-center space-x-1">
-                        <span>Udhaar Balance:</span>
+                        <span>{t('Outstanding balance')}:</span>
                         <strong className={`px-1.5 py-0.5 rounded text-[11px] ${
                           (c.outstandingBalance || 0) > 0
                             ? 'text-rose-700 bg-rose-50 border border-rose-200'
@@ -1414,158 +1536,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
         </div>
       )}
 
-      {/* PAYMENTS & FINANCIAL AUDIT TAB */}
-      {subTab === 'payments' && (
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center space-x-2">
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-stone-100 text-stone-700 border border-stone-200 uppercase tracking-wider">
-                  Financial Ledger Audit
-                </span>
-                <span className="text-xs font-mono text-stone-500">
-                  {payments.length} Payments Recorded
-                </span>
-              </div>
-              <h2 className="text-sm sm:text-base font-semibold tracking-tight text-stone-900 mt-1">
-                Platform Payments & Udhaar Transactions
-              </h2>
-              <p className="text-xs text-stone-500">
-                Audit all settlement payments, cash vouchers, bank transfers, and eliminate erroneous ledger transactions
-              </p>
-            </div>
-
-            <button
-              onClick={loadPayments}
-              className="px-3 py-1.5 rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-mono flex items-center space-x-1.5 cursor-pointer self-start sm:self-auto"
-            >
-              <RotateCcw className={`w-3.5 h-3.5 ${paymentsLoading ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
-            </button>
-          </div>
-
-          {/* Search bar */}
-          <div className="bg-white p-3.5 rounded-xl border border-stone-200 shadow-subtle flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Search by customer, supplier, order #, or memo..."
-                value={paymentSearch}
-                onChange={(e) => setPaymentSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 border border-stone-200 rounded-lg text-xs font-mono focus:outline-hidden focus:border-stone-900 bg-stone-50/50"
-              />
-            </div>
-            {paymentSearch && (
-              <button
-                onClick={() => setPaymentSearch('')}
-                className="px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 text-xs font-mono cursor-pointer"
-              >
-                Clear Filter
-              </button>
-            )}
-          </div>
-
-          {/* Payments Table / List */}
-          {paymentsLoading ? (
-            <div className="bg-white rounded-xl border border-stone-200 p-12 text-center text-xs font-mono text-stone-500">
-              Loading payment audit ledger...
-            </div>
-          ) : payments.length === 0 ? (
-            <div className="bg-white rounded-xl border border-stone-200 p-12 text-center text-xs font-mono text-stone-500">
-              No payments recorded yet across the marketplace.
-            </div>
-          ) : (
-            <div className="bg-white rounded-xl border border-stone-200 shadow-subtle overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-stone-50 border-b border-stone-200 text-[10px] font-mono text-stone-600 uppercase tracking-wider">
-                    <tr>
-                      <th className="py-3 px-4">Date & ID</th>
-                      <th className="py-3 px-4">Buyer / Customer</th>
-                      <th className="py-3 px-4">Dealer / Yard</th>
-                      <th className="py-3 px-4">Order Link</th>
-                      <th className="py-3 px-4">Mode</th>
-                      <th className="py-3 px-4 text-right">Amount</th>
-                      <th className="py-3 px-4">Audit Memo</th>
-                      <th className="py-3 px-4 text-center">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100 font-mono text-[11px]">
-                    {payments
-                      .filter((p) => {
-                        if (!paymentSearch) return true;
-                        const q = paymentSearch.toLowerCase();
-                        return (
-                          p.customer?.fullName?.toLowerCase().includes(q) ||
-                          p.customer?.phone?.includes(q) ||
-                          p.supplier?.businessName?.toLowerCase().includes(q) ||
-                          p.order?.orderNumber?.toLowerCase().includes(q) ||
-                          p.notes?.toLowerCase().includes(q) ||
-                          p.paymentMode?.toLowerCase().includes(q)
-                        );
-                      })
-                      .map((pay) => (
-                        <tr key={pay.id} className="hover:bg-stone-50/80 transition-colors">
-                          <td className="py-3 px-4 text-stone-500">
-                            <div>{new Date(pay.recordedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
-                            <div className="text-[9px] text-stone-400 truncate max-w-[90px]">{pay.id.slice(-8)}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="font-semibold text-stone-900">{pay.customer?.fullName || 'Walk-in Buyer'}</div>
-                            <div className="text-[10px] text-stone-500">{pay.customer?.phone || '—'}</div>
-                          </td>
-                          <td className="py-3 px-4 text-stone-800 font-medium">
-                            {pay.supplier?.businessName || '—'}
-                          </td>
-                          <td className="py-3 px-4">
-                            {pay.order ? (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-stone-100 text-stone-800 border border-stone-200">
-                                {pay.order.orderNumber}
-                              </span>
-                            ) : (
-                              <span className="text-stone-400 italic">Khata Settlement</span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-medium border ${
-                              pay.paymentMode === 'CASH'
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                : pay.paymentMode === 'UPI_DIRECT'
-                                ? 'bg-blue-50 text-blue-800 border-blue-200'
-                                : pay.paymentMode === 'UDHAAR'
-                                ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                : 'bg-stone-100 text-stone-700 border-stone-200'
-                            }`}>
-                              {pay.paymentMode.replace('_', ' ')}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-right font-bold text-stone-900 tabular-nums">
-                            ₹{pay.amount.toLocaleString('en-IN')}
-                          </td>
-                          <td className="py-3 px-4 text-stone-600 max-w-xs truncate text-[10px]">
-                            {pay.notes || <span className="text-stone-300">—</span>}
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <button
-                              disabled
-                              onClick={() => handleDeletePayment(pay.id)}
-                              className="p-1.5 rounded-md text-stone-400 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer"
-                              title="Payment history is immutable; reconcile through a verified reversal"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* USERS & LOGINS TAB */}
       {subTab === 'users' && (
         <div className="space-y-4">
@@ -1580,7 +1550,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                 </span>
               </div>
               <h2 className="text-sm sm:text-base font-semibold tracking-tight text-stone-900 mt-1">
-                Platform Logins, Roles & Direct Password Resets
+                {t('Accounts')}
               </h2>
               <p className="text-xs text-stone-500">
                 Directly reset forgotten passwords, change telephone numbers, modify roles, or remove accounts
@@ -1592,7 +1562,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               className="px-3 py-1.5 rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-mono flex items-center space-x-1.5 cursor-pointer"
             >
               <RotateCcw className={`w-3.5 h-3.5 ${usersLoading ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
+              <span>{t('Refresh')}</span>
             </button>
           </div>
 
@@ -1602,7 +1572,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search user mobile number..."
+                aria-label={t('Search accounts by phone')}
+                placeholder={t('Search accounts by phone')}
                 value={userSearch}
                 onChange={(e) => setUserSearch(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && loadUsers()}
@@ -1613,7 +1584,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               onClick={loadUsers}
               className="px-4 py-2 rounded-lg bg-stone-900 text-white text-xs font-mono hover:bg-stone-800 cursor-pointer"
             >
-              Search
+              {t('Search')}
             </button>
           </div>
 
@@ -1696,156 +1667,66 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
         </div>
       )}
 
-      {/* PAYMENTS & FINANCIAL AUDIT TAB */}
       {subTab === 'payments' && (
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center space-x-2">
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-stone-100 text-stone-700 border border-stone-200 uppercase tracking-wider">
-                  Financial Ledger Audit
-                </span>
-                <span className="text-xs font-mono text-stone-500">
-                  {payments.length} Payments Recorded
-                </span>
-              </div>
-              <h2 className="text-sm sm:text-base font-semibold tracking-tight text-stone-900 mt-1">
-                Platform Payments & Udhaar Transactions
-              </h2>
-              <p className="text-xs text-stone-500">
-                Audit all settlement payments, cash vouchers, bank transfers, and eliminate erroneous ledger transactions
-              </p>
-            </div>
-
-            <button
-              onClick={loadPayments}
-              className="px-3 py-1.5 rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-50 text-xs font-mono flex items-center space-x-1.5 cursor-pointer self-start sm:self-auto"
-            >
-              <RotateCcw className={`w-3.5 h-3.5 ${paymentsLoading ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
-            </button>
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold">{t('Payments')}</h2>
+            <button type="button" className="min-h-11 text-sm underline" onClick={loadPayments}>{t('Refresh')}</button>
           </div>
+          <input type="search" className="klink-field w-full rounded-lg border border-stone-400 bg-white px-3"
+            aria-label={t('Search payments')} placeholder={t('Search payments')}
+            value={paymentSearch} onChange={(event) => setPaymentSearch(event.target.value)} />
+          {paymentsLoading ? <p role="status">{t('Loading payments…')}</p>
+            : paymentsError ? <FormNotice error>{t('Payments could not be loaded.')}</FormNotice>
+            : visiblePayments.length === 0 ? <p>{t('No matching payments')}</p>
+            : <ul className="grid gap-3 md:grid-cols-2">
+              {visiblePayments.map((payment) => (
+                <li key={payment.id} className="min-w-0 space-y-3 rounded-xl border border-stone-200 bg-white p-4">
+                  <p className="flex flex-wrap items-center justify-between gap-2 font-semibold">
+                    <span className="break-words">{payment.customer?.fullName || t('Customer')}</span>
+                    <span>₹{payment.amount.toLocaleString('en-IN')}</span>
+                  </p>
+                  <dl className="space-y-1 break-words text-sm text-stone-700">
+                    {payment.customer?.phone && <div><dt className="sr-only">{t('Contact number')}</dt><dd>{payment.customer.phone}</dd></div>}
+                    <div><dt className="inline">{t('Supplier')}: </dt><dd className="inline">{payment.supplier?.businessName || '—'}</dd></div>
+                    <div><dt className="sr-only">{t('Payment entry')}</dt><dd>{new Date(payment.recordedAt).toLocaleDateString(language === 'hi' ? 'hi-IN' : 'en-IN')} · {payment.paymentMode}</dd></div>
+                    <div><dt className="inline">{t('Payment record ID')}: </dt><dd className="inline">{payment.id}</dd></div>
+                    {payment.notes && <div><dt className="sr-only">{t('Receipt notes')}</dt><dd>{payment.notes}</dd></div>}
+                  </dl>
+                  <div className="flex flex-wrap items-center gap-x-4 text-sm">
+                    {payment.customer && (
+                      <button type="button" className="min-h-11 underline" onClick={() => {
+                        ++customerRequest.current;
+                        setCustomersLoading(true);
+                        contextualFocus.current = 'consumers';
+                        setTracedCustomerId(payment.customer.id);
+                        setCustomerSearch(payment.customer.phone || payment.customer.fullName);
+                        setSubTab('consumers');
+                      }}>{t('View customer')}</button>
+                    )}
+                    {payment.order
+                      ? <button type="button" className="min-h-11 break-all text-left underline" onClick={() => findOrder(payment.order.orderNumber)}>{payment.order.orderNumber}</button>
+                      : <span>{t('Customer ledger payment')}</span>}
+                  </div>
+                </li>
+              ))}
+            </ul>}
+        </section>
+      )}
 
-          {/* Search bar */}
-          <div className="bg-white p-3.5 rounded-xl border border-stone-200 shadow-subtle flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Search by customer, supplier, order #, or memo..."
-                value={paymentSearch}
-                onChange={(e) => setPaymentSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 border border-stone-200 rounded-lg text-xs font-mono focus:outline-hidden focus:border-stone-900 bg-stone-50/50"
-              />
-            </div>
-            {paymentSearch && (
-              <button
-                onClick={() => setPaymentSearch('')}
-                className="px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 text-xs font-mono cursor-pointer"
-              >
-                Clear Filter
-              </button>
-            )}
+      {supplierChange && (
+        <SignInDialog titleId="admin-supplier-confirmation" onDismiss={() => { if (!isChangingSupplier) setSupplierChange(null); }}>
+          <h2 id="admin-supplier-confirmation" className="text-lg font-semibold">{t('Confirm supplier status change')}</h2>
+          <div className="space-y-1 break-words text-sm">
+            <p className="font-semibold">{supplierChange.businessName}</p>
+            <p>{supplierChange.phone}</p>
           </div>
-
-          {/* Payments Table / List */}
-          {paymentsLoading ? (
-            <div className="bg-white rounded-xl border border-stone-200 p-12 text-center text-xs font-mono text-stone-500">
-              Loading payment audit ledger...
-            </div>
-          ) : payments.length === 0 ? (
-            <div className="bg-white rounded-xl border border-stone-200 p-12 text-center text-xs font-mono text-stone-500">
-              No payments recorded yet across the marketplace.
-            </div>
-          ) : (
-            <div className="bg-white rounded-xl border border-stone-200 shadow-subtle overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-stone-50 border-b border-stone-200 text-[10px] font-mono text-stone-600 uppercase tracking-wider">
-                    <tr>
-                      <th className="py-3 px-4">Date & ID</th>
-                      <th className="py-3 px-4">Buyer / Customer</th>
-                      <th className="py-3 px-4">Dealer / Yard</th>
-                      <th className="py-3 px-4">Order Link</th>
-                      <th className="py-3 px-4">Mode</th>
-                      <th className="py-3 px-4 text-right">Amount</th>
-                      <th className="py-3 px-4">Audit Memo</th>
-                      <th className="py-3 px-4 text-center">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100 font-mono text-[11px]">
-                    {payments
-                      .filter((p) => {
-                        if (!paymentSearch) return true;
-                        const q = paymentSearch.toLowerCase();
-                        return (
-                          p.customer?.fullName?.toLowerCase().includes(q) ||
-                          p.customer?.phone?.includes(q) ||
-                          p.supplier?.businessName?.toLowerCase().includes(q) ||
-                          p.order?.orderNumber?.toLowerCase().includes(q) ||
-                          p.notes?.toLowerCase().includes(q) ||
-                          p.paymentMode?.toLowerCase().includes(q)
-                        );
-                      })
-                      .map((pay) => (
-                        <tr key={pay.id} className="hover:bg-stone-50/80 transition-colors">
-                          <td className="py-3 px-4 text-stone-500">
-                            <div>{new Date(pay.recordedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
-                            <div className="text-[9px] text-stone-400 truncate max-w-[90px]">{pay.id.slice(-8)}</div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="font-semibold text-stone-900">{pay.customer?.fullName || 'Walk-in Buyer'}</div>
-                            <div className="text-[10px] text-stone-500">{pay.customer?.phone || '—'}</div>
-                          </td>
-                          <td className="py-3 px-4 text-stone-800 font-medium">
-                            {pay.supplier?.businessName || '—'}
-                          </td>
-                          <td className="py-3 px-4">
-                            {pay.order ? (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-stone-100 text-stone-800 border border-stone-200">
-                                {pay.order.orderNumber}
-                              </span>
-                            ) : (
-                              <span className="text-stone-400 italic">Khata Settlement</span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-medium border ${
-                              pay.paymentMode === 'CASH'
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                : pay.paymentMode === 'UPI_DIRECT'
-                                ? 'bg-blue-50 text-blue-800 border-blue-200'
-                                : pay.paymentMode === 'UDHAAR'
-                                ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                : 'bg-stone-100 text-stone-700 border-stone-200'
-                            }`}>
-                              {pay.paymentMode.replace('_', ' ')}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-right font-bold text-stone-900 tabular-nums">
-                            ₹{pay.amount.toLocaleString('en-IN')}
-                          </td>
-                          <td className="py-3 px-4 text-stone-600 max-w-xs truncate text-[10px]">
-                            {pay.notes || <span className="text-stone-300">—</span>}
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <button
-                              disabled
-                              onClick={() => handleDeletePayment(pay.id)}
-                              className="p-1.5 rounded-md text-stone-400 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer"
-                              title="Payment history is immutable; reconcile through a verified reversal"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
+          {supplierChangeError && <FormError failure={supplierChangeError} />}
+          <div className="flex flex-wrap gap-3">
+            <button type="button" className="min-h-11 px-3 underline" disabled={isChangingSupplier} onClick={() => setSupplierChange(null)}>{t('Cancel')}</button>
+            <button type="button" className="klink-primary" disabled={isChangingSupplier} onClick={confirmSupplierChange}>{t(supplierAction(supplierChange.status))}</button>
+          </div>
+        </SignInDialog>
       )}
 
       {/* MASTER CATALOG TAB */}
@@ -1864,7 +1745,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                 </span>
               </div>
               <h2 className="text-sm sm:text-base font-semibold tracking-tight text-stone-900 mt-1">
-                Master Materials Catalogue
+                {t('Catalog maintenance')}
               </h2>
               <p className="text-xs text-stone-500">
                 Admin controls specifications & brands; suppliers set prices & stock.
@@ -2106,7 +1987,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                   onClick={() => setIsAddingProd(false)}
                   className="px-3.5 py-1.5 rounded-lg border border-stone-200 text-xs font-mono text-stone-600 hover:bg-stone-50 cursor-pointer"
                 >
-                  Cancel
+                  {t('Cancel')}
                 </button>
                 <button
                   type="submit"
@@ -2229,7 +2110,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                   onClick={() => setEditingProduct(null)}
                   className="px-3.5 py-1.5 rounded-lg border border-stone-200 text-xs font-mono text-stone-600 hover:bg-stone-50 cursor-pointer"
                 >
-                  Cancel
+                  {t('Cancel')}
                 </button>
                 <button
                   type="submit"
@@ -2403,7 +2284,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                   onClick={() => setIsOnboardingSupplier(false)}
                   className="px-3.5 py-1.5 rounded-lg border border-stone-200 text-xs font-mono text-stone-600 hover:bg-stone-50 cursor-pointer"
                 >
-                  Cancel
+                  {t('Cancel')}
                 </button>
                 <button
                   type="submit"
@@ -2482,24 +2363,25 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
 
       {/* FOUNDER FIX / OVERRIDE ORDER MODAL */}
       {fixingOrder && (
-        <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl border border-stone-200 animate-in zoom-in-95 my-8">
+        <SignInDialog titleId="admin-order-edit-title" onDismiss={() => setFixingOrder(null)}>
+          <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-stone-100 pb-3">
               <div className="flex items-center space-x-2">
                 <div className="p-2 rounded-lg bg-stone-900 text-white">
                   <Wrench className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-sm text-stone-900">
-                    Founder Order Override: #{fixingOrder.id.slice(-8).toUpperCase()}
+                  <h3 id="admin-order-edit-title" className="font-semibold text-sm text-stone-900">
+                    {t('Affected order')}: {fixingOrder.orderNumber || fixingOrder.id}
                   </h3>
                   <p className="text-xs text-stone-500">
-                    Fix mistakes made by suppliers or customers directly
+                    {fixingOrder.customer?.fullName}
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setFixingOrder(null)}
+                aria-label={t('Close')}
                 className="p-1 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -2650,19 +2532,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                   onClick={() => setFixingOrder(null)}
                   className="px-3.5 py-1.5 rounded-lg border border-stone-200 text-xs font-mono text-stone-600 hover:bg-stone-50 cursor-pointer"
                 >
-                  Cancel
+                  {t('Cancel')}
                 </button>
                 <button
                   type="submit"
                   disabled={isSavingOrderFix}
                   className="px-4 py-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white text-xs font-mono cursor-pointer disabled:opacity-50"
                 >
-                  {isSavingOrderFix ? 'Saving Overrides...' : 'Apply Order Overrides'}
+                  {isSavingOrderFix ? t('Saving changes…') : t('Save order changes')}
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </SignInDialog>
       )}
 
       {/* FOUNDER EDIT SUPPLIER PROFILE MODAL */}
@@ -2809,7 +2691,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                   onClick={() => setEditingSupplier(null)}
                   className="px-3.5 py-1.5 rounded-lg border border-stone-200 text-xs font-mono text-stone-600 hover:bg-stone-50 cursor-pointer"
                 >
-                  Cancel
+                  {t('Cancel')}
                 </button>
                 <button
                   type="submit"
@@ -2997,7 +2879,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                   onClick={() => setEditingYardProduct(null)}
                   className="px-3.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 cursor-pointer"
                 >
-                  Cancel
+                  {t('Cancel')}
                 </button>
                 <button
                   type="submit"
@@ -3074,7 +2956,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                   onClick={() => setEditingCustomer(null)}
                   className="px-3.5 py-1.5 rounded-lg border border-stone-200 font-mono text-stone-600 hover:bg-stone-50 cursor-pointer"
                 >
-                  Cancel
+                  {t('Cancel')}
                 </button>
                 <button
                   type="submit"
@@ -3151,7 +3033,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                   onClick={() => setAdjustingCustomer(null)}
                   className="px-3.5 py-1.5 rounded-lg border border-stone-200 font-mono text-stone-600 hover:bg-stone-50 cursor-pointer"
                 >
-                  Cancel
+                  {t('Cancel')}
                 </button>
                 <button
                   type="submit"
@@ -3167,17 +3049,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
 
       {/* FOUNDER EDIT USER / RESET PASSWORD MODAL */}
       {editingUser && (
-        <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-stone-200 animate-in zoom-in-95">
+        <SignInDialog titleId="admin-account-edit-title" onDismiss={() => setEditingUser(null)}>
+          <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-stone-100 pb-3">
               <div>
-                <h3 className="font-semibold text-sm text-stone-900">
-                  User Account: +91 {editingUser.phone}
+                <h3 id="admin-account-edit-title" className="font-semibold text-sm text-stone-900">
+                  {t('Affected account')}: +91 {editingUser.phone}
                 </h3>
                 <p className="text-xs text-stone-500">Reset password directly or modify account role</p>
               </div>
               <button
                 onClick={() => setEditingUser(null)}
+                aria-label={t('Close')}
                 className="p-1 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -3244,7 +3127,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                   onClick={() => setEditingUser(null)}
                   className="px-3.5 py-1.5 rounded-lg border border-stone-200 font-mono text-stone-600 hover:bg-stone-50 cursor-pointer"
                 >
-                  Cancel
+                  {t('Cancel')}
                 </button>
                 <button
                   type="submit"
@@ -3255,7 +3138,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               </div>
             </form>
           </div>
-        </div>
+        </SignInDialog>
       )}
 
     </div>

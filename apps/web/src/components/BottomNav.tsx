@@ -199,7 +199,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               }`}
             >
               <Shield className="w-4 h-4 mb-0.5" />
-              <span>{t('GMV')}</span>
+              <span>{t('Overview')}</span>
             </button>
 
             <button
@@ -225,7 +225,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               }`}
             >
               <Store className="w-4 h-4 mb-0.5" />
-              <span>{t('Yards')}</span>
+              <span>{t('Suppliers')}</span>
             </button>
 
             <button
@@ -238,7 +238,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               }`}
             >
               <Users className="w-4 h-4 mb-0.5" />
-              <span>{t('Buyers')}</span>
+              <span>{t('Customers')}</span>
             </button>
 
             <button
@@ -251,7 +251,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               }`}
             >
               <CreditCard className="w-4 h-4 mb-0.5" />
-              <span>{t('Audit')}</span>
+              <span>{t('Payments')}</span>
             </button>
 
             <button
@@ -264,7 +264,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               }`}
             >
               <KeyRound className="w-4 h-4 mb-0.5" />
-              <span>{t('Logins')}</span>
+              <span>{t('Accounts')}</span>
             </button>
           </>
         )}
