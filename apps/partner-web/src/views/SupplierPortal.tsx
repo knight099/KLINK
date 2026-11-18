@@ -48,7 +48,7 @@ interface SupplierPortalProps {
 
 export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTab }) => {
   const { t, language } = useLanguage();
-  const { user, switchPersona, isDemoMode, login } = useAuth();
+  const { user, login } = useAuth();
   const { districts } = useDistrict();
 
   const [dashboardData, setDashboardData] = useState<any>(null);
@@ -321,9 +321,6 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
   // Initial load of all portal datasets on user authentication
   useEffect(() => {
     if (!user || user.role !== 'SUPPLIER') {
-      if (isDemoMode) {
-        switchPersona('SUPPLIER', 0);
-      }
       return;
     }
     setIsLoading(true);
@@ -344,7 +341,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
         setCategories(res.categories || []);
       })
     ]).finally(() => setIsLoading(false));
-  }, [user, isDemoMode]);
+  }, [user]);
 
   // Handle Order Status change
   const handleUpdateStatus = async (orderId: string, status: string, reason?: string) => {
@@ -842,13 +839,6 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                 {isDealerLoggingIn ? t('Verifying Yard Credentials...') : t('Sign In to Yard OS')}
               </button>
 
-              {isDemoMode && (
-                <div className="pt-2 border-t border-stone-200 text-center">
-                  <span className="text-[11px] text-stone-500">
-                    Sandbox dealer: <strong className="font-mono text-stone-700">9876543210 / supplier123</strong>
-                  </span>
-                </div>
-              )}
             </form>
           ) : (
             <form onSubmit={handleDealerApply} className="space-y-3">

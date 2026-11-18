@@ -13,8 +13,7 @@ export const AuthModal: React.FC = () => {
     authModalMode,
     setAuthModalMode,
     login,
-    registerCustomer,
-    isDemoMode
+    registerCustomer
   } = useAuth();
   const { activeDistrict, districts } = useDistrict();
   const appMode = getAppMode();
@@ -71,12 +70,6 @@ export const AuthModal: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const fillQuickDemo = (demoPhone: string, demoPass: string) => {
-    setPhone(demoPhone);
-    setPassword(demoPass);
-    setError(null);
   };
 
   return (
@@ -204,40 +197,6 @@ export const AuthModal: React.FC = () => {
             {isLoading ? t('Signing In...') : t('Sign In')}
           </button>
 
-          {/* Quick Demo Credentials Assistant — Strictly hidden in production unless Demo Mode is enabled */}
-          {isDemoMode && (
-            <div className="pt-2 border-t border-stone-200">
-              <span className="text-[10px] font-mono text-stone-400 uppercase tracking-wider block mb-1.5">
-                Sandbox Test Credentials
-              </span>
-              <div className="grid grid-cols-3 gap-1.5 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => fillQuickDemo('9123456789', 'customer123')}
-                  className="p-1.5 rounded-md border border-stone-200 bg-stone-50 hover:bg-stone-100 text-left cursor-pointer"
-                >
-                  <div className="font-semibold text-stone-800">Customer</div>
-                  <div className="font-mono text-[9px] text-stone-500">Ravi Kumar</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fillQuickDemo('9876543210', 'supplier123')}
-                  className="p-1.5 rounded-md border border-stone-200 bg-stone-50 hover:bg-stone-100 text-left cursor-pointer"
-                >
-                  <div className="font-semibold text-stone-800">Dealer Yard</div>
-                  <div className="font-mono text-[9px] text-stone-500">Gupta Materials</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fillQuickDemo('9999999999', 'admin123')}
-                  className="p-1.5 rounded-md border border-stone-200 bg-stone-50 hover:bg-stone-100 text-left cursor-pointer"
-                >
-                  <div className="font-semibold text-stone-800">{t('Admin')}</div>
-                  <div className="font-mono text-[9px] text-stone-500">Platform Ops</div>
-                </button>
-              </div>
-            </div>
-          )}
         </form>
       )}
 
