@@ -60,7 +60,7 @@ export function AppContent() {
   };
 
   const setAdminSubTab = (subtab: any) => {
-    updateNav({ adminSubTab: subtab });
+    updateNav({ tab: 'admin', adminSubTab: subtab });
   };
 
   const setIsCartOpen = (isOpen: boolean) => {
