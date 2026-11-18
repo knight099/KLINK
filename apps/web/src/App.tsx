@@ -1,6 +1,6 @@
 import { LanguageProvider, useLanguage, OrderStatus, SignInDialog, LanguageSwitch } from '@klink/ui';
 import '@klink/ui/styles.css';
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './lib/auth-context';
 import { DistrictProvider } from './lib/district-context';
 import { CartProvider } from './lib/cart-context';
@@ -18,7 +18,7 @@ import { CheckCircle2 } from 'lucide-react';
 
 export function AppContent() {
   const { t } = useLanguage();
-  const { user, switchPersona, isDemoMode } = useAuth();
+  const { user } = useAuth();
   const { navState, updateNav } = useNavigationHistory();
   const appMode = getAppMode();
 
@@ -40,7 +40,7 @@ export function AppContent() {
       ? 'supplier'
       : appMode === 'ADMIN'
       ? 'admin'
-      : !isDemoMode && user
+      : user
       ? user.role === 'SUPPLIER' ? 'supplier' : user.role === 'ADMIN' ? 'admin' : 'customer'
       : navTab;
 
@@ -74,19 +74,6 @@ export function AppContent() {
   const setCompareId = (id: string | null) => {
     updateNav({ compareId: id });
   };
-
-  // Synchronize persona with tab selection ONLY in Demo Mode
-  useEffect(() => {
-    if (isDemoMode) {
-      if (currentTab === 'supplier' && user?.role !== 'SUPPLIER') {
-        switchPersona('SUPPLIER', 0);
-      } else if (currentTab === 'admin' && user?.role !== 'ADMIN') {
-        switchPersona('ADMIN');
-      } else if (currentTab === 'customer' && user?.role !== 'CUSTOMER') {
-        switchPersona('CUSTOMER');
-      }
-    }
-  }, [currentTab, user?.role, isDemoMode]);
 
   const handleOrderSuccess = (order: any) => {
     setSuccessOrder(order);

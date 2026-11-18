@@ -37,17 +37,14 @@ interface AuthContextType {
   user: UserSession | null;
   token: string | null;
   isLoading: boolean;
-  isDemoMode: boolean;
-  setDemoMode: (enabled: boolean) => void;
   isAuthModalOpen: boolean;
   setIsAuthModalOpen: (open: boolean) => void;
   authModalMode: 'LOGIN' | 'REGISTER';
   setAuthModalMode: (mode: 'LOGIN' | 'REGISTER') => void;
-  login: (phone: string, password?: string, expectedRole?: 'CUSTOMER' | 'SUPPLIER' | 'ADMIN') => Promise<void>;
+  login: (phone: string, password: string, expectedRole?: 'CUSTOMER' | 'SUPPLIER' | 'ADMIN') => Promise<void>;
   registerCustomer: (data: RegisterCustomerData) => Promise<void>;
   onboardSupplier: (data: OnboardSupplierData) => Promise<{ message: string; supplierId: string }>;
   logout: () => void;
-  switchPersona: (role: 'CUSTOMER' | 'SUPPLIER' | 'ADMIN', indexOrPhone?: number | string) => Promise<void>;
   changePassword: (newPassword: string) => Promise<void>;
 }
 
@@ -62,22 +59,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(tokenKey));
   const [isLoading, setIsLoading] = useState(true);
 
-  // Strict Production Default: Demo Mode is OFF unless explicitly enabled via VITE_DEMO_MODE === 'true'
-  const [isDemoMode, setIsDemoModeState] = useState<boolean>(() => {
-    if (import.meta.env.VITE_DEMO_MODE === 'true') {
-      const stored = localStorage.getItem('klink_demo_mode');
-      return stored !== null ? stored === 'true' : true;
-    }
-    return false;
-  });
-
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
-
-  const setDemoMode = (enabled: boolean) => {
-    setIsDemoModeState(enabled);
-    localStorage.setItem('klink_demo_mode', String(enabled));
-  };
 
   useEffect(() => {
     async function loadUser() {
@@ -97,25 +80,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setToken(null);
           setUser(null);
         }
-      } else if (isDemoMode) {
-        try {
-          if (requiredRole === 'SUPPLIER') {
-            await login('9876543210', 'supplier123', 'SUPPLIER');
-          } else if (requiredRole === 'ADMIN') {
-            await login('9999999999', 'admin123', 'ADMIN');
-          } else {
-            await login('9123456789', 'customer123', 'CUSTOMER');
-          }
-        } catch {}
       }
       setIsLoading(false);
     }
     loadUser();
-  }, [token, isDemoMode]);
+  }, [token]);
 
   const login = async (
     phone: string,
-    password = 'customer123',
+    password: string,
     expectedRole?: 'CUSTOMER' | 'SUPPLIER' | 'ADMIN'
   ) => {
     setIsLoading(true);
@@ -177,27 +150,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
   };
 
-  const switchPersona = async (role: 'CUSTOMER' | 'SUPPLIER' | 'ADMIN', indexOrPhone?: number | string) => {
-    if (!isDemoMode) return;
-    if (role === 'CUSTOMER') {
-      const phone = typeof indexOrPhone === 'string' ? indexOrPhone : '9123456789';
-      await login(phone, 'customer123', 'CUSTOMER');
-    } else if (role === 'SUPPLIER') {
-      const phone = indexOrPhone === 1 ? '9876543211' : indexOrPhone === 2 ? '9876543212' : '9876543210';
-      await login(phone, 'supplier123', 'SUPPLIER');
-    } else if (role === 'ADMIN') {
-      await login('9999999999', 'admin123', 'ADMIN');
-    }
-  };
-
   return (
     <AuthContext.Provider
       value={{
         user,
         token,
         isLoading,
-        isDemoMode,
-        setDemoMode,
         isAuthModalOpen,
         setIsAuthModalOpen,
         authModalMode,
@@ -206,7 +164,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         registerCustomer,
         onboardSupplier,
         logout,
-        switchPersona,
         changePassword
       }}
     >

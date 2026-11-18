@@ -27,30 +27,21 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
   const {
     user,
     logout,
-    switchPersona,
-    isDemoMode,
-    setDemoMode,
     setIsAuthModalOpen,
     setAuthModalMode
   } = useAuth();
   const { activeDistrict, districts, setDistrict } = useDistrict();
   const { itemCount } = useCart();
   const appMode = getAppMode();
-  const allowDemoToggle = import.meta.env.VITE_DEMO_MODE === 'true';
 
   const [districtDropdownOpen, setDistrictDropdownOpen] = useState(false);
-  const [personaDropdownOpen, setPersonaDropdownOpen] = useState(false);
 
   const districtRef = useRef<HTMLDivElement>(null);
-  const personaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (districtRef.current && !districtRef.current.contains(event.target as Node)) {
         setDistrictDropdownOpen(false);
-      }
-      if (personaRef.current && !personaRef.current.contains(event.target as Node)) {
-        setPersonaDropdownOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -175,172 +166,55 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
             )}
           </div>
 
-          {/* Center: Desktop Segmented Portal Switcher — ONLY rendered in UNIFIED mode when Demo Mode is active */}
-          {appMode === 'UNIFIED' && isDemoMode && (
-            <div className="hidden lg:flex items-center bg-stone-900 border border-stone-800 p-1 rounded-xl shadow-xs">
-              <button
-                onClick={() => {
-                  setCurrentTab('customer');
-                  if (isDemoMode && user?.role !== 'CUSTOMER') switchPersona('CUSTOMER');
-                }}
-                className={`px-3 py-1.5 text-xs rounded-lg transition-all flex items-center space-x-2 cursor-pointer font-medium ${
-                  currentTab === 'customer'
-                    ? 'bg-stone-800 text-stone-100 border border-stone-750 shadow-xs'
-                    : 'text-stone-400 hover:text-stone-200 hover:bg-stone-850'
-                }`}
-              >
-                <HardHat className="w-3.5 h-3.5 text-stone-300" />
-                <span>{t('Contractor Marketplace')}</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setCurrentTab('supplier');
-                  if (isDemoMode && user?.role !== 'SUPPLIER') switchPersona('SUPPLIER', 0);
-                }}
-                className={`px-3 py-1.5 text-xs rounded-lg transition-all flex items-center space-x-2 cursor-pointer font-medium ${
-                  currentTab === 'supplier'
-                    ? 'bg-stone-800 text-stone-100 border border-stone-750 shadow-xs'
-                    : 'text-stone-400 hover:text-stone-200 hover:bg-stone-850'
-                }`}
-              >
-                <Store className="w-3.5 h-3.5 text-stone-300" />
-                <span>{t('Supplier Yard OS')}</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setCurrentTab('admin');
-                  if (isDemoMode && user?.role !== 'ADMIN') switchPersona('ADMIN');
-                }}
-                className={`px-3 py-1.5 text-xs rounded-lg transition-all flex items-center space-x-2 cursor-pointer font-medium ${
-                  currentTab === 'admin'
-                    ? 'bg-stone-800 text-stone-100 border border-stone-750 shadow-xs'
-                    : 'text-stone-400 hover:text-stone-200 hover:bg-stone-850'
-                }`}
-              >
-                <Shield className="w-3.5 h-3.5 text-stone-300" />
-                <span>{t('Platform Catalog')}</span>
-              </button>
-            </div>
-          )}
-
           {/* Right: Auth Controls & Shopping Cart */}
           <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
             <LanguageSwitch />
-            {isDemoMode ? (
-              <div className="relative" ref={personaRef}>
-                <button
-                  onClick={() => setPersonaDropdownOpen(!personaDropdownOpen)}
-                  className="flex items-center space-x-2 px-3 py-1.5 rounded-lg border border-stone-800 bg-stone-900 text-xs text-stone-300 hover:border-stone-700 hover:bg-stone-850 transition-all cursor-pointer"
-                >
-                  <div
-                    className={`w-2 h-2 rounded-full ${
-                      user?.role === 'ADMIN'
-                        ? 'bg-purple-400'
-                        : user?.role === 'SUPPLIER'
-                        ? 'bg-sky-400'
-                        : 'bg-amber-400'
-                    }`}
-                  />
-                  <div className="text-left leading-tight hidden sm:block">
-                    <div className="font-semibold text-stone-200 text-xs truncate max-w-[130px]">
-                      {user ? user.name : t('Demo Sandbox')}
+            <div className="flex items-center space-x-2">
+              {user ? (
+                <div className="flex items-center space-x-2 bg-stone-900 border border-stone-800 px-3 py-1.5 rounded-lg text-xs">
+                  <div className="leading-tight">
+                    <div className="font-semibold text-stone-200 truncate max-w-[140px]">
+                      {user.name}
                     </div>
-                    <div className="text-[10px] font-mono text-stone-500 uppercase tracking-wider">
-                      {user?.role === 'SUPPLIER'
-                        ? t('Yard Operator')
-                        : user?.role === 'ADMIN'
-                        ? t('Platform Admin')
-                        : t('Site Buyer')}
+                    <div className="text-[10px] font-mono text-stone-500">
+                      {user.role} • +91 {user.phone}
                     </div>
                   </div>
-                  <ChevronDown
-                    className={`w-3.5 h-3.5 text-stone-500 transition-transform ${
-                      personaDropdownOpen ? 'rotate-180' : ''
-                    }`}
-                  />
-                </button>
-
-                {personaDropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-xl bg-stone-900 border border-stone-800 shadow-2xl p-2 z-50 text-stone-200 divide-y divide-stone-800 animate-in fade-in zoom-in-95 duration-150">
-                    <div className="px-3 py-1.5 flex items-center justify-between">
-                      <div>
-                        <span className="text-[10px] font-mono text-stone-400 uppercase tracking-widest block">
-                          {t('Demo Sandbox Active')}
-                        </span>
-                        <span className="text-[11px] text-stone-500">{t('1-Click Role Simulation')}</span>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setDemoMode(false);
-                          setPersonaDropdownOpen(false);
-                        }}
-                        className="text-[10px] font-mono px-2 py-0.5 rounded border border-stone-700 bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer"
-                      >
-                        {t('Exit Demo')}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              /* Production Auth Controls */
-              <div className="flex items-center space-x-2">
-                {user ? (
-                  <div className="flex items-center space-x-2 bg-stone-900 border border-stone-800 px-3 py-1.5 rounded-lg text-xs">
-                    <div className="leading-tight">
-                      <div className="font-semibold text-stone-200 truncate max-w-[140px]">
-                        {user.name}
-                      </div>
-                      <div className="text-[10px] font-mono text-stone-500">
-                        {user.role} • +91 {user.phone}
-                      </div>
-                    </div>
+                  <button
+                    onClick={logout}
+                    title={t('Log Out')}
+                    className="p-1 rounded-md text-stone-400 hover:text-stone-100 hover:bg-stone-800 cursor-pointer ml-1"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                (appMode === 'CUSTOMER' || appMode === 'UNIFIED') && (
+                  <div className="flex items-center space-x-1.5">
                     <button
-                      onClick={logout}
-                      title={t('Log Out')}
-                      className="p-1 rounded-md text-stone-400 hover:text-stone-100 hover:bg-stone-800 cursor-pointer ml-1"
+                      onClick={() => {
+                        setAuthModalMode('LOGIN');
+                        setIsAuthModalOpen(true);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-stone-900 border border-stone-800 hover:border-stone-700 text-stone-200 text-xs font-semibold flex items-center space-x-1.5 cursor-pointer shadow-xs"
                     >
-                      <LogOut className="w-3.5 h-3.5" />
+                      <LogIn className="w-3.5 h-3.5" />
+                      <span>{t('Sign In')}</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setAuthModalMode('REGISTER');
+                        setIsAuthModalOpen(true);
+                      }}
+                      className="hidden sm:inline-flex px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-white text-stone-950 text-xs font-semibold cursor-pointer shadow-xs"
+                    >
+                      {t('Register')}
                     </button>
                   </div>
-                ) : (
-                  (appMode === 'CUSTOMER' || appMode === 'UNIFIED') && (
-                    <div className="flex items-center space-x-1.5">
-                      <button
-                        onClick={() => {
-                          setAuthModalMode('LOGIN');
-                          setIsAuthModalOpen(true);
-                        }}
-                        className="px-3 py-1.5 rounded-lg bg-stone-900 border border-stone-800 hover:border-stone-700 text-stone-200 text-xs font-semibold flex items-center space-x-1.5 cursor-pointer shadow-xs"
-                      >
-                        <LogIn className="w-3.5 h-3.5" />
-                        <span>{t('Sign In')}</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setAuthModalMode('REGISTER');
-                          setIsAuthModalOpen(true);
-                        }}
-                        className="hidden sm:inline-flex px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-white text-stone-950 text-xs font-semibold cursor-pointer shadow-xs"
-                      >
-                        {t('Register')}
-                      </button>
-                    </div>
-                  )
-                )}
+                )
+              )}
 
-                {allowDemoToggle && (
-                  <button
-                    onClick={() => setDemoMode(true)}
-                    className="px-2 py-1 text-[10px] font-mono rounded border border-stone-800 text-stone-400 hover:text-stone-200 hover:bg-stone-900 cursor-pointer"
-                  >
-                    {t('Demo')}
-                  </button>
-                )}
-              </div>
-            )}
+            </div>
 
             {/* Shopping Cart Button — Only shown in Customer Marketplace or Customer tab */}
             {(appMode === 'CUSTOMER' || (appMode === 'UNIFIED' && currentTab === 'customer')) && (

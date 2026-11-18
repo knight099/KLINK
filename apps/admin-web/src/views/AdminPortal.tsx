@@ -44,7 +44,7 @@ interface AdminPortalProps {
 
 export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) => {
   const { t, language } = useLanguage();
-  const { user, switchPersona, isDemoMode, login } = useAuth();
+  const { user, login } = useAuth();
   const { districts } = useDistrict();
 
   const [metricsData, setMetricsData] = useState<any>(null);
@@ -161,7 +161,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
   // Onboard Supplier Form State
   const [isOnboardingSupplier, setIsOnboardingSupplier] = useState(false);
   const [supPhone, setSupPhone] = useState('');
-  const [supTempPassword, setSupTempPassword] = useState('klink@2026');
+  const [supTempPassword, setSupTempPassword] = useState('');
   const [supBusinessName, setSupBusinessName] = useState('');
   const [supOwnerName, setSupOwnerName] = useState('');
   const [supDistrictId, setSupDistrictId] = useState('');
@@ -315,9 +315,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
 
   useEffect(() => {
     if (!user || user.role !== 'ADMIN') {
-      if (isDemoMode) {
-        switchPersona('ADMIN');
-      }
       return;
     }
     loadMetrics();
@@ -327,7 +324,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
     loadCustomers();
     loadUsers();
     loadPayments();
-  }, [user, isDemoMode]);
+  }, [user]);
 
   useEffect(() => {
     if (user && user.role === 'ADMIN') {
@@ -459,7 +456,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
 
   const handleOnboardSupplier = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!supPhone || !supBusinessName || !supOwnerName || !supDistrictId || !supAddress) {
+    if (!supPhone || !supTempPassword || !supBusinessName || !supOwnerName || !supDistrictId || !supAddress) {
       alert('Please fill all required supplier fields');
       return;
     }
@@ -490,6 +487,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
 
       // Reset form
       setSupPhone('');
+      setSupTempPassword('');
       setSupBusinessName('');
       setSupOwnerName('');
       setSupAddress('');
@@ -821,13 +819,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               {isAdminLoggingIn ? t('Authenticating...') : t('Sign In to Admin Console')}
             </button>
 
-            {isDemoMode && (
-              <div className="pt-2 border-t border-stone-200 text-center">
-                <span className="text-[11px] text-stone-500">
-                  Sandbox admin: <strong className="font-mono text-stone-700">9999999999 / admin123</strong>
-                </span>
-              </div>
-            )}
           </form>
         </div>
       </div>
@@ -2195,12 +2186,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                     Temporary 1st Login Password *
                   </label>
                   <input
-                    type="text"
+                    type="password"
+                    autoComplete="new-password"
                     required
                     minLength={6}
                     value={supTempPassword}
                     onChange={(e) => setSupTempPassword(e.target.value)}
-                    placeholder="e.g. klink@2026"
                     className="w-full px-3 py-2 text-xs border border-stone-200 rounded-lg font-mono text-stone-900 font-bold focus:border-stone-800 focus:outline-none"
                   />
                 </div>
