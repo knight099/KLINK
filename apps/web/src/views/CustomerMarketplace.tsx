@@ -1,10 +1,10 @@
-import { useLanguage, OrderStatus, PaymentStatus } from '@klink/ui';
+import { useLanguage, FormNotice, OrderStatus, PaymentStatus } from '@klink/ui';
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../lib/api';
 import { useDistrict } from '../lib/district-context';
 import { useAuth } from '../lib/auth-context';
 import { useCart } from '../lib/cart-context';
-import { CompareModal } from '../components/CompareModal';
+import { MaterialComparison } from '../components/MaterialComparison';
 import {
   Search,
   MapPin,
@@ -54,7 +54,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
   onSelectCompare
 }) => {
   const { t, language } = useLanguage();
-  const { activeDistrict } = useDistrict();
+  const { activeDistrict, districts, setDistrict, isLoading: isLoadingDistrict } = useDistrict();
   const { user, setIsAuthModalOpen, setAuthModalMode } = useAuth();
   const { items, supplierId: cartSupplierId, addItem, updateQuantity, itemCount, finalTotal, deliveryCharge } = useCart();
 
@@ -73,48 +73,30 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
   const [discoveryMode, setDiscoveryMode] = useState<'materials' | 'yards'>('materials');
   const [categories, setCategories] = useState<any[]>([]);
   const [masterProducts, setMasterProducts] = useState<any[]>([]);
-  const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
-  const [selectedProductForCompare, setSelectedProductForCompare] = useState<any | null>(null);
-  const [isCompareOpen, setIsCompareOpen] = useState(false);
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState(true);
+  const [catalogError, setCatalogError] = useState(false);
+  const [catalogAttempt, setCatalogAttempt] = useState(0);
+  const [localCompareId, setLocalCompareId] = useState<string | null>(null);
+  const materialId = compareId === undefined ? localCompareId : compareId;
+  const material = masterProducts.find((product) => product.id === materialId);
 
-  // Active yard helper (URL parameter takes precedence if passed)
   const activeSupplierId = yardId !== undefined ? yardId : selectedSupplierId;
 
   const handleSelectYard = (id: string | null) => {
     setSelectedSupplierId(id);
-    if (onSelectYard) onSelectYard(id);
+    onSelectYard?.(id);
   };
 
-  const handleOpenCompare = (product: any) => {
-    setSelectedProductForCompare(product);
-    setIsCompareOpen(true);
-    if (onSelectCompare) onSelectCompare(product.id);
+  const selectMaterial = (id: string | null) => {
+    setLocalCompareId(id);
+    onSelectCompare?.(id);
   };
-
-  const handleCloseCompare = () => {
-    setIsCompareOpen(false);
-    setSelectedProductForCompare(null);
-    if (onSelectCompare) onSelectCompare(null);
-  };
-
-  // Sync compareId from URL params when master catalog loads
-  useEffect(() => {
-    if (compareId && masterProducts.length > 0) {
-      const match = masterProducts.find((p) => p.id === compareId);
-      if (match) {
-        setSelectedProductForCompare(match);
-        setIsCompareOpen(true);
-      }
-    } else if (!compareId && isCompareOpen) {
-      setIsCompareOpen(false);
-      setSelectedProductForCompare(null);
-    }
-  }, [compareId, masterProducts]);
 
   // Load Master Products and Categories for Material-First Discovery
   useEffect(() => {
     async function loadCatalog() {
       setIsLoadingCatalog(true);
+      setCatalogError(false);
       try {
         const [catRes, prodRes] = await Promise.all([
           apiFetch<any>('/catalog/categories'),
@@ -123,13 +105,14 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
         setCategories(catRes.categories || []);
         setMasterProducts(prodRes.masterProducts || []);
       } catch (e) {
+        setCatalogError(true);
         console.error('Error loading master catalog:', e);
       } finally {
         setIsLoadingCatalog(false);
       }
     }
     loadCatalog();
-  }, []);
+  }, [catalogAttempt]);
 
   // Load Verified Local Suppliers
   useEffect(() => {
@@ -355,7 +338,8 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
           <button
             onClick={() => {
               setSubTab('shop');
-              handleSelectYard(null);
+              setSelectedSupplierId(null);
+              setLocalCompareId(null);
             }}
             className={`px-4 py-2 text-xs font-black rounded-xl transition-all flex items-center space-x-2 cursor-pointer ${
               subTab === 'shop' && !activeSupplierId
@@ -625,10 +609,36 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
             </div>
           )}
         </div>
+      ) : materialId ? (
+        material ? (
+          <MaterialComparison key={material.id} material={material} onBack={() => selectMaterial(null)} onOpenCart={onOpenCart} />
+        ) : (
+          <div className="space-y-3">
+            <FormNotice error={!isLoadingCatalog}>{t(isLoadingCatalog ? 'Loading materials…' : catalogError ? 'Could not load materials.' : 'Material not found')}</FormNotice>
+            <button className="klink-primary" type="button" onClick={() => selectMaterial(null)}>{t('Back to materials')}</button>
+          </div>
+        )
       ) : activeSupplierId === null ? (
         /* VIEW 2: ZOMATO/SWIGGY STYLE YARDS DIRECTORY */
         <div className="space-y-6">
           <h1 className="text-2xl font-semibold text-stone-900">{t('Find materials')}</h1>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <label htmlFor="shopping-district" className="text-sm font-semibold text-stone-700">{t('Delivery District')}</label>
+            <select
+              id="shopping-district"
+              value={activeDistrict?.id || ''}
+              disabled={isLoadingDistrict || districts.length === 0}
+              onChange={(event) => {
+                const district = districts.find(({ id }) => id === event.target.value);
+                if (district) setDistrict(district);
+              }}
+              className="klink-field max-w-full rounded-lg border border-stone-400 bg-white px-3 text-stone-900"
+            >
+              <option value="" disabled>{t('Choose a delivery district')}</option>
+              {districts.map((district) => <option key={district.id} value={district.id}>{district.name}</option>)}
+            </select>
+          </div>
 
           {/* Search Bar */}
           <div className="relative">
@@ -692,10 +702,11 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
           {discoveryMode === 'materials' ? (
             <div className="space-y-4">
               {/* Category Filter Pills with Hindi Names */}
-              <div className="flex items-center space-x-2 overflow-x-auto pb-1 scrollbar-none">
+              <div className="flex flex-wrap items-center gap-2 pb-1">
                 <button
                   type="button"
                   onClick={() => setSelectedCategorySlug('all')}
+                  aria-pressed={selectedCategorySlug === 'all'}
                   className={`px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap cursor-pointer transition-all ${
                     selectedCategorySlug === 'all'
                       ? 'bg-stone-900 text-white shadow-xs'
@@ -709,6 +720,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                     key={cat.id}
                     type="button"
                     onClick={() => setSelectedCategorySlug(cat.slug)}
+                    aria-pressed={selectedCategorySlug === cat.slug}
                     className={`px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap cursor-pointer transition-all flex items-center space-x-1.5 ${
                       selectedCategorySlug === cat.slug
                         ? 'bg-stone-900 text-white shadow-xs'
@@ -720,7 +732,12 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                 ))}
               </div>
 
-              {isLoadingCatalog ? (
+              {catalogError ? (
+                <FormNotice error>
+                  <p>{t('Could not load materials.')}</p>
+                  <button type="button" className="mt-2 min-h-11 underline" onClick={() => setCatalogAttempt(catalogAttempt + 1)}>{t('Try again')}</button>
+                </FormNotice>
+              ) : isLoadingCatalog ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   {[1, 2, 3, 4].map((i) => (
                     <div key={i} className="h-56 bg-white rounded-xl border border-stone-200 animate-pulse p-5" />
@@ -758,26 +775,13 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                           </p>
                         </div>
 
-                        {/* Specification Grid */}
-                        <div className="bg-[#FAF9F6] rounded-lg p-2.5 my-2 border border-stone-200/60 grid grid-cols-2 gap-2 text-xs">
-                          <div>
-                            <span className="text-[10px] uppercase font-medium text-stone-400 block">{t('Unit')}</span>
-                            <span className="font-mono font-semibold text-stone-800">1 {p.defaultUnit}</span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] uppercase font-medium text-stone-400 block">{t('Status')}</span>
-                            <span className="font-mono font-semibold text-emerald-700 flex items-center">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1" />
-                              {t('Active Stock')}
-                            </span>
-                          </div>
-                        </div>
+
                       </div>
 
                       <div className="pt-3 mt-2 border-t border-stone-100">
                         <button
                           type="button"
-                          onClick={() => handleOpenCompare(p)}
+                          onClick={() => selectMaterial(p.id)}
                           className="klink-primary w-full flex items-center justify-center gap-2"
                         >
                           <Scale className="w-3.5 h-3.5 text-amber-400" />
@@ -976,7 +980,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
             </div>
 
             {/* Yard Categories Chips */}
-            <div className="flex items-center space-x-2 overflow-x-auto pb-1 scrollbar-none">
+            <div className="flex flex-wrap items-center gap-2 pb-1">
               <button
                 onClick={() => setSelectedCategorySlug('all')}
                 className={`px-4 py-2 rounded-xl text-xs font-black shrink-0 transition-all ${
@@ -1322,18 +1326,6 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
         </div>
       )}
 
-      {/* Real-Time Cross-Supplier Material Comparison Modal */}
-      {selectedProductForCompare && (
-        <CompareModal
-          masterProduct={selectedProductForCompare}
-          isOpen={isCompareOpen}
-          onClose={handleCloseCompare}
-          onAddedToCart={() => {
-            handleCloseCompare();
-            onOpenCart();
-          }}
-        />
-      )}
     </div>
   );
 };
