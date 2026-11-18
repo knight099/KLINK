@@ -8,6 +8,14 @@ overrides:
   deepmerge-ts: ^8.0.0
   esbuild: ^0.28.2
 
+patchedDependencies:
+  picomatch@2.3.2:
+    hash: 04351e84854fc82760adcb36d5cc07eda6dc9e679bc3414cfe0d0597057a7ce8
+    path: patches/picomatch@2.3.2.patch
+  picomatch@4.0.7:
+    hash: cffca71173048d48b9efaa860e56308f386483ebb802e1a499136dd31f8496ad
+    path: patches/picomatch@4.0.7.patch
+
 importers:
 
   .:
@@ -2964,7 +2972,7 @@ snapshots:
   anymatch@3.1.3:
     dependencies:
       normalize-path: 3.0.0
-      picomatch: 2.3.2
+      picomatch: 2.3.2(patch_hash=04351e84854fc82760adcb36d5cc07eda6dc9e679bc3414cfe0d0597057a7ce8)
 
   arg@5.0.2: {}
 
@@ -3258,9 +3266,9 @@ snapshots:
       reusify: 1.1.0
       xtend: 4.0.2
 
-  fdir@6.5.0(picomatch@4.0.7):
+  fdir@6.5.0(picomatch@4.0.7(patch_hash=cffca71173048d48b9efaa860e56308f386483ebb802e1a499136dd31f8496ad)):
     optionalDependencies:
-      picomatch: 4.0.7
+      picomatch: 4.0.7(patch_hash=cffca71173048d48b9efaa860e56308f386483ebb802e1a499136dd31f8496ad)
 
   fill-range@7.1.1:
     dependencies:
@@ -3418,7 +3426,7 @@ snapshots:
   micromatch@4.0.8:
     dependencies:
       braces: 3.0.3
-      picomatch: 2.3.2
+      picomatch: 2.3.2(patch_hash=04351e84854fc82760adcb36d5cc07eda6dc9e679bc3414cfe0d0597057a7ce8)
 
   mime-db@1.54.0: {}
 
@@ -3499,9 +3507,9 @@ snapshots:
 
   picocolors@1.1.1: {}
 
-  picomatch@2.3.2: {}
+  picomatch@2.3.2(patch_hash=04351e84854fc82760adcb36d5cc07eda6dc9e679bc3414cfe0d0597057a7ce8): {}
 
-  picomatch@4.0.7: {}
+  picomatch@4.0.7(patch_hash=cffca71173048d48b9efaa860e56308f386483ebb802e1a499136dd31f8496ad): {}
 
   pino-abstract-transport@3.0.0:
     dependencies:
@@ -3630,7 +3638,7 @@ snapshots:
 
   readdirp@3.6.0:
     dependencies:
-      picomatch: 2.3.2
+      picomatch: 2.3.2(patch_hash=04351e84854fc82760adcb36d5cc07eda6dc9e679bc3414cfe0d0597057a7ce8)
 
   readdirp@4.1.2: {}
 
@@ -3810,8 +3818,8 @@ snapshots:
 
   tinyglobby@0.2.17:
     dependencies:
-      fdir: 6.5.0(picomatch@4.0.7)
-      picomatch: 4.0.7
+      fdir: 6.5.0(picomatch@4.0.7(patch_hash=cffca71173048d48b9efaa860e56308f386483ebb802e1a499136dd31f8496ad))
+      picomatch: 4.0.7(patch_hash=cffca71173048d48b9efaa860e56308f386483ebb802e1a499136dd31f8496ad)
 
   to-regex-range@5.0.1:
     dependencies:
@@ -3895,8 +3903,8 @@ snapshots:
   vite@6.4.5(@types/node@22.20.5)(jiti@1.21.7)(tsx@4.23.15)(yaml@2.9.1):
     dependencies:
       esbuild: 0.28.2
-      fdir: 6.5.0(picomatch@4.0.7)
-      picomatch: 4.0.7
+      fdir: 6.5.0(picomatch@4.0.7(patch_hash=cffca71173048d48b9efaa860e56308f386483ebb802e1a499136dd31f8496ad))
+      picomatch: 4.0.7(patch_hash=cffca71173048d48b9efaa860e56308f386483ebb802e1a499136dd31f8496ad)
       postcss: 8.5.32
       rollup: 4.65.1
       tinyglobby: 0.2.17
@@ -3910,8 +3918,8 @@ snapshots:
   vite@6.4.5(@types/node@22.20.5)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1):
     dependencies:
       esbuild: 0.28.2
-      fdir: 6.5.0(picomatch@4.0.7)
-      picomatch: 4.0.7
+      fdir: 6.5.0(picomatch@4.0.7(patch_hash=cffca71173048d48b9efaa860e56308f386483ebb802e1a499136dd31f8496ad))
+      picomatch: 4.0.7(patch_hash=cffca71173048d48b9efaa860e56308f386483ebb802e1a499136dd31f8496ad)
       postcss: 8.5.32
       rollup: 4.65.1
       tinyglobby: 0.2.17

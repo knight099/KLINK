@@ -1,0 +1,16 @@
+diff --git a/lib/parse.js b/lib/parse.js
+--- a/lib/parse.js
++++ b/lib/parse.js
+@@ -311,6 +311,12 @@
+     if (repeatedExtglobRecursion(branch) > max) {
+       return { risky: true };
+     }
++  }
++
++  // GHSA-fc5q-39xc-vjpf: fall back to literal matching for repeated
++  // wildcard branches that the analysis above could not safely flatten.
++  if (branches.some(branch => branch.includes('*'))) {
++    return { risky: true };
+   }
+
+   return { risky: false };
