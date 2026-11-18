@@ -57,7 +57,8 @@ export async function apiFetch<T>(
   if (!response.ok) {
     if (attemptStorageKey && response.status >= 400 && response.status < 500) sessionStorage.removeItem(attemptStorageKey);
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || errorData.message || `API Error: ${response.status}`);
+    const error = new Error(errorData.error || errorData.message || `API Error: ${response.status}`);
+    throw Object.assign(error, { status: response.status });
   }
 
   const result = await response.json();

@@ -1,3 +1,5 @@
+import { LanguageProvider, useLanguage } from '@klink/ui';
+import '@klink/ui/styles.css';
 import React, { useState } from 'react';
 import { AuthProvider } from './lib/auth-context';
 import { DistrictProvider } from './lib/district-context';
@@ -12,6 +14,7 @@ import { useNavigationHistory } from './lib/useNavigationHistory';
 import { CheckCircle2 } from 'lucide-react';
 
 export function AppContent() {
+  const { t } = useLanguage();
   const { navState, updateNav } = useNavigationHistory();
   const { customerSubTab, isCartOpen, yardId, compareId } = navState;
   const [successOrder, setSuccessOrder] = useState<any | null>(null);
@@ -44,7 +47,7 @@ export function AppContent() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-stone-900">
+    <div className="klink-shell min-h-screen flex flex-col bg-[#FAF9F6] text-stone-900">
       <Navbar
         currentTab="customer"
         setCurrentTab={() => {}}
@@ -92,10 +95,10 @@ export function AppContent() {
             </div>
             <div className="space-y-1">
               <h3 className="font-semibold text-base text-stone-900">
-                Order <span className="font-mono">{successOrder.orderNumber}</span> Booked!
+                {t('Order placed')} · <span className="font-mono">{successOrder.orderNumber}</span>
               </h3>
               <p className="text-xs text-stone-500 leading-relaxed">
-                Transmitted to <strong>{successOrder.supplier?.businessName || 'the dealer yard'}</strong> for dispatch. Tractor delivery details can be tracked in your site orders tab.
+                {t('The supplier will confirm your order. Follow it under My orders.')}
               </p>
             </div>
             <div className="pt-2">
@@ -103,7 +106,7 @@ export function AppContent() {
                 onClick={() => setSuccessOrder(null)}
                 className="w-full py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs shadow-xs transition-all cursor-pointer"
               >
-                Track Site Delivery Now
+                {t('Track order')}
               </button>
             </div>
           </div>
@@ -115,13 +118,15 @@ export function AppContent() {
 
 export function App() {
   return (
-    <AuthProvider>
-      <DistrictProvider>
-        <CartProvider>
-          <AppContent />
-        </CartProvider>
-      </DistrictProvider>
-    </AuthProvider>
+    <LanguageProvider>
+      <AuthProvider>
+        <DistrictProvider>
+          <CartProvider>
+            <AppContent />
+          </CartProvider>
+        </DistrictProvider>
+      </AuthProvider>
+    </LanguageProvider>
   );
 }
 

@@ -1,3 +1,4 @@
+import { useLanguage, FormNotice, FormError, OrderStatus, PaymentStatus, signInFailure, type FormFailure } from '@klink/ui';
 import React, { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
@@ -46,6 +47,7 @@ interface SupplierPortalProps {
 }
 
 export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTab }) => {
+  const { t, language } = useLanguage();
   const { user, switchPersona, isDemoMode, login } = useAuth();
   const { districts } = useDistrict();
 
@@ -64,7 +66,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
   const [dealerAuthTab, setDealerAuthTab] = useState<'LOGIN' | 'APPLY'>('LOGIN');
   const [dealerPhone, setDealerPhone] = useState('');
   const [dealerPass, setDealerPass] = useState('');
-  const [dealerLoginError, setDealerLoginError] = useState<string | null>(null);
+  const [dealerLoginError, setDealerLoginError] = useState<FormFailure | null>(null);
   const [isDealerLoggingIn, setIsDealerLoggingIn] = useState(false);
 
   // Self-Onboarding Application State
@@ -702,7 +704,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
     try {
       await login(dealerPhone.trim(), dealerPass, 'SUPPLIER');
     } catch (err: any) {
-      setDealerLoginError(err?.message || 'Invalid dealer mobile or password');
+      setDealerLoginError(signInFailure(err));
     } finally {
       setIsDealerLoggingIn(false);
     }
@@ -735,7 +737,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
         res.message || 'Yard registration submitted! Our operations team will verify and activate your dealer account.'
       );
     } catch (err: any) {
-      setDealerLoginError(err?.message || 'Failed to submit yard registration');
+      setDealerLoginError({ message: err?.message, status: err?.status, fallback: 'Failed to submit yard registration' });
     } finally {
       setIsSubmittingApplication(false);
     }
@@ -751,8 +753,8 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
               <Store className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="font-semibold text-sm text-stone-900">KLINK Partner — Yard OS</h2>
-              <p className="text-xs text-stone-500">Authorized Dealer & Logistics Yard Portal</p>
+              <h2 className="font-semibold text-sm text-stone-900">{t('KLINK Partner — Yard OS')}</h2>
+              <p className="text-xs text-stone-500">{t('Authorized Dealer & Logistics Yard Portal')}</p>
             </div>
           </div>
 
@@ -771,7 +773,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                   : 'text-stone-600 hover:text-stone-900'
               }`}
             >
-              Dealer Sign In
+              {t('Dealer Sign In')}
             </button>
             <button
               type="button"
@@ -785,64 +787,64 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                   : 'text-stone-600 hover:text-stone-900'
               }`}
             >
-              Register New Yard
+              {t('Register New Yard')}
             </button>
           </div>
 
           {dealerLoginError && (
-            <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800">
-              {dealerLoginError}
-            </div>
+            <FormError failure={dealerLoginError} />
           )}
 
           {applySuccessMessage && (
-            <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-1">
-              <div className="font-semibold">Application Received</div>
-              <p>{applySuccessMessage}</p>
-            </div>
+            <FormNotice>
+              <div className="font-semibold">{t('Application Received')}</div>
+              <p>{language === 'en' ? applySuccessMessage : t('Application submitted for review')}</p>
+            </FormNotice>
           )}
 
           {dealerAuthTab === 'LOGIN' ? (
             <form onSubmit={handleDealerLogin} className="space-y-3.5">
               <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Dealer Mobile Phone
+                <label htmlFor="klink-handleDealerLogin-1" className="block text-xs font-semibold text-stone-700 mb-1">
+                  {t('Dealer Mobile Phone')}
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-semibold text-stone-400">
                     +91
                   </span>
                   <input
+                    id="klink-handleDealerLogin-1"
                     type="tel"
-                    placeholder="Enter 10-digit registered mobile"
+                    placeholder={t('Enter 10-digit registered mobile')}
                     value={dealerPhone}
                     onChange={(e) => setDealerPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
                     required
-                    className="w-full pl-11 pr-3 py-2 text-xs font-mono font-semibold text-stone-900 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                    className="klink-field w-full pl-11 pr-3 py-2 text-xs font-mono font-semibold text-stone-900 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Password
+                <label htmlFor="klink-handleDealerLogin-2" className="block text-xs font-semibold text-stone-700 mb-1">
+                  {t('Password')}
                 </label>
                 <input
+                  id="klink-handleDealerLogin-2"
                   type="password"
-                  placeholder="Enter yard password"
+                  placeholder={t('Enter yard password')}
                   value={dealerPass}
                   onChange={(e) => setDealerPass(e.target.value)}
                   required
-                  className="w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                  className="klink-field w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={isDealerLoggingIn || dealerPhone.length < 10 || !dealerPass}
-                className="w-full py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs shadow-xs disabled:opacity-50 transition-all cursor-pointer"
+                className="klink-primary w-full"
               >
-                {isDealerLoggingIn ? 'Verifying Yard Credentials...' : 'Sign In to Yard OS'}
+                {isDealerLoggingIn ? t('Verifying Yard Credentials...') : t('Sign In to Yard OS')}
               </button>
 
               {isDemoMode && (
@@ -856,57 +858,61 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
           ) : (
             <form onSubmit={handleDealerApply} className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Yard / Firm Business Name
+                <label htmlFor="klink-handleDealerApply-1" className="block text-xs font-semibold text-stone-700 mb-1">
+                  {t('Yard / Firm Business Name')}
                 </label>
                 <input
+                  id="klink-handleDealerApply-1"
                   type="text"
                   placeholder="e.g. Mithila Steels & Building Materials"
                   value={applyBusinessName}
                   onChange={(e) => setApplyBusinessName(e.target.value)}
                   required
-                  className="w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                  className="klink-field w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="block text-xs font-semibold text-stone-700 mb-1">
-                    Proprietor / Owner Name
+                  <label htmlFor="klink-handleDealerApply-2" className="block text-xs font-semibold text-stone-700 mb-1">
+                    {t('Proprietor / Owner Name')}
                   </label>
                   <input
+                    id="klink-handleDealerApply-2"
                     type="text"
-                    placeholder="Owner Full Name"
+                    placeholder={t('Owner Full Name')}
                     value={applyOwnerName}
                     onChange={(e) => setApplyOwnerName(e.target.value)}
                     required
-                    className="w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                    className="klink-field w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-stone-700 mb-1">
-                    10-Digit Mobile
+                  <label htmlFor="klink-handleDealerApply-3" className="block text-xs font-semibold text-stone-700 mb-1">
+                    {t('10-Digit Mobile')}
                   </label>
                   <input
+                    id="klink-handleDealerApply-3"
                     type="tel"
                     placeholder="9876543210"
                     value={applyPhone}
                     onChange={(e) => setApplyPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
                     required
-                    className="w-full px-3 py-2 text-xs font-mono border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                    className="klink-field w-full px-3 py-2 text-xs font-mono border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="block text-xs font-semibold text-stone-700 mb-1">
-                    Primary District
+                  <label htmlFor="klink-handleDealerApply-4" className="block text-xs font-semibold text-stone-700 mb-1">
+                    {t('Primary District')}
                   </label>
                   <select
+                    id="klink-handleDealerApply-4"
                     value={applyDistrictId || districts[0]?.id || ''}
                     onChange={(e) => setApplyDistrictId(e.target.value)}
-                    className="w-full px-2.5 py-2 text-xs border border-stone-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-stone-900"
+                    className="klink-field w-full px-2.5 py-2 text-xs border border-stone-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-stone-900"
                   >
                     {districts.map((d) => (
                       <option key={d.id} value={d.id}>
@@ -916,45 +922,48 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-stone-700 mb-1">
-                    GSTIN (Optional)
+                  <label htmlFor="klink-handleDealerApply-5" className="block text-xs font-semibold text-stone-700 mb-1">
+                    {t('GSTIN (Optional)')}
                   </label>
                   <input
+                    id="klink-handleDealerApply-5"
                     type="text"
                     placeholder="10AAAAA0000A1Z5"
                     value={applyGstin}
                     onChange={(e) => setApplyGstin(e.target.value.toUpperCase())}
-                    className="w-full px-3 py-2 text-xs font-mono border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                    className="klink-field w-full px-3 py-2 text-xs font-mono border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Yard Depot Address
+                <label htmlFor="klink-handleDealerApply-6" className="block text-xs font-semibold text-stone-700 mb-1">
+                  {t('Yard Depot Address')}
                 </label>
                 <input
+                  id="klink-handleDealerApply-6"
                   type="text"
-                  placeholder="Full yard address & landmark"
+                  placeholder={t('Full yard address & landmark')}
                   value={applyAddress}
                   onChange={(e) => setApplyAddress(e.target.value)}
                   required
-                  className="w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                  className="klink-field w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Create Account Password
+                <label htmlFor="klink-handleDealerApply-7" className="block text-xs font-semibold text-stone-700 mb-1">
+                  {t('Create Account Password')}
                 </label>
                 <input
+                  id="klink-handleDealerApply-7"
                   type="password"
-                  placeholder="Min 6 characters"
+                  placeholder={t('Min 6 characters')}
                   value={applyPassword}
                   onChange={(e) => setApplyPassword(e.target.value)}
                   required
                   minLength={6}
-                  className="w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                  className="klink-field w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
                 />
               </div>
 
@@ -968,9 +977,9 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                   applyPassword.length < 6 ||
                   !applyAddress
                 }
-                className="w-full py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs shadow-xs disabled:opacity-50 transition-all cursor-pointer"
+                className="klink-primary w-full"
               >
-                {isSubmittingApplication ? 'Submitting Yard Application...' : 'Submit Dealer Yard Application'}
+                {isSubmittingApplication ? t('Submitting Yard Application...') : t('Submit Dealer Yard Application')}
               </button>
             </form>
           )}
@@ -1026,7 +1035,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
           >
             <Plus className="w-3.5 h-3.5" />
             <ShoppingBag className="w-3.5 h-3.5" />
-            <span>+ Manual Order</span>
+            <span>{t('+ Manual Order')}</span>
           </button>
 
           <button
@@ -1039,27 +1048,29 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
             className="px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-white text-stone-900 text-xs font-mono font-semibold flex items-center space-x-1.5 shadow-2xs transition-colors cursor-pointer"
           >
             <IndianRupee className="w-3.5 h-3.5 text-stone-900" />
-            <span>+ Record Payment</span>
+            <span>{t('+ Record Payment')}</span>
           </button>
         </div>
 
         {/* Desktop SubTab Navigation Tabs */}
-        <div className="hidden lg:flex items-center bg-stone-850 border border-stone-750 p-1 rounded-xl w-full sm:w-auto">
+        <div className="hidden md:flex flex-wrap items-center bg-stone-850 border border-stone-750 p-1 rounded-xl w-full sm:w-auto">
           <button
             onClick={() => setSubTab('dashboard')}
+            aria-current={subTab === 'dashboard' ? 'page' : undefined}
             className={`px-3 py-1.5 text-xs rounded-lg transition-all cursor-pointer font-medium ${
               subTab === 'dashboard' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            Dashboard
+            {t('Dashboard')}
           </button>
           <button
             onClick={() => setSubTab('orders')}
+            aria-current={subTab === 'orders' ? 'page' : undefined}
             className={`px-3 py-1.5 text-xs rounded-lg transition-all cursor-pointer font-medium relative ${
               subTab === 'orders' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            <span>Orders</span>
+            <span>{t('Orders')}</span>
             {stats?.newOrdersCount > 0 && (
               <span className="ml-1 px-1.5 py-0.2 rounded-full bg-stone-900 text-stone-100 text-[10px] font-mono">
                 {stats.newOrdersCount}
@@ -1068,13 +1079,14 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
           </button>
           <button
             onClick={() => setSubTab('deliveries')}
+            aria-current={subTab === 'deliveries' ? 'page' : undefined}
             className={`px-3 py-1.5 text-xs rounded-lg transition-all cursor-pointer font-medium relative ${
               subTab === 'deliveries' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
             <span className="flex items-center space-x-1">
               <Truck className="w-3 h-3 mr-1" />
-              <span>Dispatches</span>
+              <span>{t('Dispatches')}</span>
             </span>
             {deliveriesData?.stats?.onRoadCount > 0 && (
               <span className="ml-1 px-1.5 py-0.2 rounded-full bg-emerald-900 text-emerald-300 text-[10px] font-mono">
@@ -1084,27 +1096,30 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
           </button>
           <button
             onClick={() => setSubTab('inventory')}
+            aria-current={subTab === 'inventory' ? 'page' : undefined}
             className={`px-3 py-1.5 text-xs rounded-lg transition-all cursor-pointer font-medium ${
               subTab === 'inventory' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            Pricing
+            {t('Pricing')}
           </button>
           <button
             onClick={() => setSubTab('ledger')}
+            aria-current={subTab === 'ledger' ? 'page' : undefined}
             className={`px-3 py-1.5 text-xs rounded-lg transition-all cursor-pointer font-medium ${
               subTab === 'ledger' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            Udhaar
+            {t('Udhaar')}
           </button>
           <button
             onClick={() => setSubTab('profile')}
+            aria-current={subTab === 'profile' ? 'page' : undefined}
             className={`px-3 py-1.5 text-xs rounded-lg transition-all cursor-pointer font-medium ${
               subTab === 'profile' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            Profile
+            {t('Profile')}
           </button>
         </div>
       </div>
@@ -1248,7 +1263,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                         <span className="font-black text-xs text-slate-900">{order.orderNumber}</span>
                         <span className="text-xs font-bold text-slate-700">({custName})</span>
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700">
-                          {order.status}
+                          <OrderStatus status={order.status} />
                         </span>
                         {order.vehicleNumber && (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
@@ -1760,7 +1775,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                         <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                           <span className="text-sm font-black text-slate-900">{order.orderNumber}</span>
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-blue-100 text-blue-800">
-                            {order.status}
+                            <OrderStatus status={order.status} />
                           </span>
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             order.paymentStatus === 'PAID' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
@@ -2416,7 +2431,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                               </span>
                               {isDebit && (
                                 <span className="block text-[10px] font-mono text-stone-400">
-                                  Status: {tx.paymentStatus}
+                                  Status: <PaymentStatus status={tx.paymentStatus} />
                                 </span>
                               )}
                             </div>

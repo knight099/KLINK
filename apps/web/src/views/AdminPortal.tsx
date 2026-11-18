@@ -1,3 +1,4 @@
+import { useLanguage, FormError, OrderStatus, PaymentStatus, signInFailure, type FormFailure } from '@klink/ui';
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
@@ -42,6 +43,7 @@ interface AdminPortalProps {
 }
 
 export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) => {
+  const { t } = useLanguage();
   const { user, switchPersona, isDemoMode, login } = useAuth();
   const { districts } = useDistrict();
 
@@ -54,7 +56,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
   // Admin Direct Login State
   const [adminPhone, setAdminPhone] = useState('');
   const [adminPass, setAdminPass] = useState('');
-  const [adminLoginError, setAdminLoginError] = useState<string | null>(null);
+  const [adminLoginError, setAdminLoginError] = useState<FormFailure | null>(null);
   const [isAdminLoggingIn, setIsAdminLoggingIn] = useState(false);
 
   // Orders Management & Rescue State
@@ -700,7 +702,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
     try {
       await login(adminPhone.trim(), adminPass, 'ADMIN');
     } catch (err: any) {
-      setAdminLoginError(err?.message || 'Invalid administrator phone or password');
+      setAdminLoginError(signInFailure(err));
     } finally {
       setIsAdminLoggingIn(false);
     }
@@ -716,57 +718,57 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
               <Shield className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="font-semibold text-sm text-stone-900">KLINK Central Admin</h2>
-              <p className="text-xs text-stone-500">Platform Operations & Control Tower</p>
+              <h2 className="font-semibold text-sm text-stone-900">{t('KLINK Central Admin')}</h2>
+              <p className="text-xs text-stone-500">{t('Platform Operations & Control Tower')}</p>
             </div>
           </div>
 
           {adminLoginError && (
-            <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800">
-              {adminLoginError}
-            </div>
+            <FormError failure={adminLoginError} />
           )}
 
           <form onSubmit={handleAdminLogin} className="space-y-3.5">
             <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Admin Mobile Phone
+              <label htmlFor="klink-handleAdminLogin-1" className="block text-xs font-semibold text-stone-700 mb-1">
+                {t('Admin Mobile Phone')}
               </label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-semibold text-stone-400">
                   +91
                 </span>
                 <input
+                  id="klink-handleAdminLogin-1"
                   type="tel"
-                  placeholder="Enter authorized admin mobile"
+                  placeholder={t('Enter authorized admin mobile')}
                   value={adminPhone}
                   onChange={(e) => setAdminPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
                   required
-                  className="w-full pl-11 pr-3 py-2 text-xs font-mono font-semibold text-stone-900 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                  className="klink-field w-full pl-11 pr-3 py-2 text-xs font-mono font-semibold text-stone-900 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Security Password
+              <label htmlFor="klink-handleAdminLogin-2" className="block text-xs font-semibold text-stone-700 mb-1">
+                {t('Security Password')}
               </label>
               <input
+                id="klink-handleAdminLogin-2"
                 type="password"
-                placeholder="Enter admin password"
+                placeholder={t('Enter admin password')}
                 value={adminPass}
                 onChange={(e) => setAdminPass(e.target.value)}
                 required
-                className="w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                className="klink-field w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
               />
             </div>
 
             <button
               type="submit"
               disabled={isAdminLoggingIn || adminPhone.length < 10 || !adminPass}
-              className="w-full py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs shadow-xs disabled:opacity-50 transition-all cursor-pointer"
+              className="klink-primary w-full"
             >
-              {isAdminLoggingIn ? 'Authenticating...' : 'Sign In to Admin Console'}
+              {isAdminLoggingIn ? t('Authenticating...') : t('Sign In to Admin Console')}
             </button>
 
             {isDemoMode && (
@@ -816,22 +818,25 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
         <div className="flex items-center flex-wrap gap-1 bg-stone-850 border border-stone-750 p-1 rounded-xl">
           <button
             onClick={() => setSubTab('overview')}
+            aria-current={subTab === 'overview' ? 'page' : undefined}
             className={`px-3 py-1.5 text-xs rounded-lg transition-all cursor-pointer font-medium ${
               subTab === 'overview' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            GMV Ops
+            {t('GMV Ops')}
           </button>
           <button
             onClick={() => setSubTab('orders')}
+            aria-current={subTab === 'orders' ? 'page' : undefined}
             className={`px-3 py-1.5 text-xs rounded-lg transition-all cursor-pointer font-medium ${
               subTab === 'orders' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            Orders & Rescue {orders.length > 0 ? `(${orders.length})` : ''}
+            {t('Orders & Rescue')} {orders.length > 0 ? `(${orders.length})` : ''}
           </button>
           <button
             onClick={() => setSubTab('suppliers')}
+            aria-current={subTab === 'suppliers' ? 'page' : undefined}
             className={`px-3 py-1.5 text-xs rounded-lg transition-all cursor-pointer font-medium ${
               subTab === 'suppliers' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
@@ -840,30 +845,34 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
           </button>
           <button
             onClick={() => setSubTab('consumers')}
+            aria-current={subTab === 'consumers' ? 'page' : undefined}
             className={`px-3 py-1.5 text-xs rounded-lg transition-all cursor-pointer font-medium ${
               subTab === 'consumers' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            Buyers & Udhaar {customers.length > 0 ? `(${customers.length})` : ''}
+            {t('Buyers & Udhaar')} {customers.length > 0 ? `(${customers.length})` : ''}
           </button>
           <button
             onClick={() => setSubTab('payments')}
+            aria-current={subTab === 'payments' ? 'page' : undefined}
             className={`px-3 py-1.5 text-xs rounded-lg transition-all cursor-pointer font-medium ${
               subTab === 'payments' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            Payments Audit {payments.length > 0 ? `(${payments.length})` : ''}
+            {t('Payments Audit')} {payments.length > 0 ? `(${payments.length})` : ''}
           </button>
           <button
             onClick={() => setSubTab('users')}
+            aria-current={subTab === 'users' ? 'page' : undefined}
             className={`px-3 py-1.5 text-xs rounded-lg transition-all cursor-pointer font-medium ${
               subTab === 'users' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            User Logins {usersList.length > 0 ? `(${usersList.length})` : ''}
+            {t('User Logins')} {usersList.length > 0 ? `(${usersList.length})` : ''}
           </button>
           <button
             onClick={() => setSubTab('catalog')}
+            aria-current={subTab === 'catalog' ? 'page' : undefined}
             className={`px-3 py-1.5 text-xs rounded-lg transition-all cursor-pointer font-medium ${
               subTab === 'catalog' ? 'bg-stone-700 text-stone-100 shadow-2xs font-semibold' : 'text-stone-400 hover:text-stone-200'
             }`}
@@ -1098,7 +1107,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                               : 'bg-amber-50 text-amber-800 border border-amber-200'
                           }`}
                         >
-                          {ord.status.replace(/_/g, ' ')}
+                          <OrderStatus status={ord.status} />
                         </span>
 
                         <button
@@ -1159,7 +1168,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
                               ? 'bg-emerald-100 text-emerald-800'
                               : 'bg-amber-100 text-amber-800'
                           }`}>
-                            {ord.paymentStatus}
+                            <PaymentStatus status={ord.paymentStatus} />
                           </span>
                         </div>
                         <div className="text-sm font-bold font-mono text-stone-900 tabular-nums">
