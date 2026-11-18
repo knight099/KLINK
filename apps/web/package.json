@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@klink/shared-types": "workspace:*",
+    "@klink/ui": "workspace:*",
     "clsx": "^2.1.1",
     "lucide-react": "^1.16.0",
     "react": "^18.3.1",

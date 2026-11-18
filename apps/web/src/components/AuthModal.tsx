@@ -1,10 +1,12 @@
+import { useLanguage, LanguageSwitch, SignInDialog, FormError, signInFailure, type FormFailure } from '@klink/ui';
 import React, { useState } from 'react';
 import { useAuth } from '../lib/auth-context';
 import { useDistrict } from '../lib/district-context';
 import { getAppMode } from '../lib/api';
-import { X, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { X, Eye, EyeOff } from 'lucide-react';
 
 export const AuthModal: React.FC = () => {
+  const { t } = useLanguage();
   const {
     isAuthModalOpen,
     setIsAuthModalOpen,
@@ -27,7 +29,7 @@ export const AuthModal: React.FC = () => {
   const [districtId, setDistrictId] = useState(activeDistrict?.id || '');
 
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FormFailure | null>(null);
 
   if (!isAuthModalOpen) return null;
 
@@ -39,7 +41,7 @@ export const AuthModal: React.FC = () => {
       const expectedRole = appMode === 'UNIFIED' ? undefined : appMode;
       await login(phone.trim(), password, expectedRole);
     } catch (err: any) {
-      setError(err?.message || 'Invalid mobile number or password');
+      setError(signInFailure(err));
     } finally {
       setIsLoading(false);
     }
@@ -48,12 +50,13 @@ export const AuthModal: React.FC = () => {
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    const targetDistrict = districtId || activeDistrict?.id || districts[0]?.id;
+    if (!targetDistrict) {
+      setError({ fallback: 'Please select a delivery district' });
+      return;
+    }
     setIsLoading(true);
     try {
-      const targetDistrict = districtId || activeDistrict?.id || districts[0]?.id;
-      if (!targetDistrict) {
-        throw new Error('Please select a delivery district');
-      }
       await registerCustomer({
         phone: phone.trim(),
         password,
@@ -64,7 +67,7 @@ export const AuthModal: React.FC = () => {
         pincode: pincode.trim() || undefined
       });
     } catch (err: any) {
-      setError(err?.message || 'Registration failed. Check your phone number.');
+      setError({ message: err?.message, status: err?.status, fallback: 'Unable to create an account. Check your details and try again.' });
     } finally {
       setIsLoading(false);
     }
@@ -77,285 +80,293 @@ export const AuthModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-      <div className="bg-white rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl border border-stone-200 animate-in zoom-in-95 duration-150 relative">
-        {/* Close Button */}
+    <SignInDialog titleId="klink-auth-title" onDismiss={() => setIsAuthModalOpen(false)}>
+      {/* Close Button */}
+      <button
+        aria-label={t('Close')}
+        onClick={() => setIsAuthModalOpen(false)}
+        className="absolute right-4 top-4 text-stone-400 hover:text-stone-700 p-1 rounded-lg hover:bg-stone-100 cursor-pointer"
+      >
+        <X className="w-5 h-5" />
+      </button>
+
+      {/* Header */}
+      <div className="space-y-1 pr-8">
+        <div className="flex items-center space-x-2">
+          <div className="w-8 h-8 rounded-lg bg-stone-900 text-white flex items-center justify-center font-mono font-bold text-xs">
+            K
+          </div>
+          <div>
+            <h3 id="klink-auth-title" className="font-semibold text-sm text-stone-900">
+              {authModalMode === 'LOGIN' ? t('Sign In to KLINK') : t('Create Contractor / Buyer Account')}
+            </h3>
+            <p className="text-xs text-stone-500">
+              {authModalMode === 'LOGIN'
+                ? t('Access your site deliveries, saved addresses, and Bahi-Khata ledger')
+                : t('Direct delivery of cement, TMT steel, sand, and bricks across Bihar')}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <LanguageSwitch />
+
+      {/* Tab Toggle */}
+      <div className="flex p-0.5 bg-stone-100 rounded-lg border border-stone-200">
         <button
-          onClick={() => setIsAuthModalOpen(false)}
-          className="absolute right-4 top-4 text-stone-400 hover:text-stone-700 p-1 rounded-lg hover:bg-stone-100 cursor-pointer"
+          type="button"
+          onClick={() => {
+            setAuthModalMode('LOGIN');
+            setError(null);
+          }}
+          className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+            authModalMode === 'LOGIN'
+              ? 'bg-white text-stone-900 shadow-xs'
+              : 'text-stone-600 hover:text-stone-900'
+          }`}
         >
-          <X className="w-5 h-5" />
+          {t('Sign In')}
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            setAuthModalMode('REGISTER');
+            setError(null);
+          }}
+          className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+            authModalMode === 'REGISTER'
+              ? 'bg-white text-stone-900 shadow-xs'
+              : 'text-stone-600 hover:text-stone-900'
+          }`}
+        >
+          {t('New Buyer Account')}
+        </button>
+      </div>
 
-        {/* Header */}
-        <div className="space-y-1">
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-lg bg-stone-900 text-white flex items-center justify-center font-mono font-bold text-xs">
-              K
-            </div>
-            <div>
-              <h3 className="font-semibold text-sm text-stone-900">
-                {authModalMode === 'LOGIN' ? 'Sign In to KLINK' : 'Create Contractor / Buyer Account'}
-              </h3>
-              <p className="text-xs text-stone-500">
-                {authModalMode === 'LOGIN'
-                  ? 'Access your site deliveries, saved addresses, and Bahi-Khata ledger'
-                  : 'Direct delivery of cement, TMT steel, sand, and bricks across Bihar'}
-              </p>
-            </div>
-          </div>
-        </div>
+      {/* Error Notice */}
+      {error && (
+        <FormError failure={error} />
+      )}
 
-        {/* Tab Toggle */}
-        <div className="flex p-0.5 bg-stone-100 rounded-lg border border-stone-200">
-          <button
-            type="button"
-            onClick={() => {
-              setAuthModalMode('LOGIN');
-              setError(null);
-            }}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
-              authModalMode === 'LOGIN'
-                ? 'bg-white text-stone-900 shadow-xs'
-                : 'text-stone-600 hover:text-stone-900'
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setAuthModalMode('REGISTER');
-              setError(null);
-            }}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
-              authModalMode === 'REGISTER'
-                ? 'bg-white text-stone-900 shadow-xs'
-                : 'text-stone-600 hover:text-stone-900'
-            }`}
-          >
-            New Buyer Account
-          </button>
-        </div>
-
-        {/* Error Notice */}
-        {error && (
-          <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start space-x-2">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {/* LOGIN FORM */}
-        {authModalMode === 'LOGIN' && (
-          <form onSubmit={handleLoginSubmit} className="space-y-3.5">
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Mobile Number
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-semibold text-stone-400">
-                  +91
-                </span>
-                <input
-                  type="tel"
-                  placeholder="Enter 10-digit mobile number"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                  required
-                  className="w-full pl-11 pr-3 py-2 text-xs font-mono font-semibold text-stone-900 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="w-full pl-3 pr-9 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading || phone.length < 10 || !password}
-              className="w-full py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs shadow-xs disabled:opacity-50 transition-all cursor-pointer"
-            >
-              {isLoading ? 'Signing In...' : 'Sign In'}
-            </button>
-
-            {/* Quick Demo Credentials Assistant — Strictly hidden in production unless Demo Mode is enabled */}
-            {isDemoMode && (
-              <div className="pt-2 border-t border-stone-200">
-                <span className="text-[10px] font-mono text-stone-400 uppercase tracking-wider block mb-1.5">
-                  Sandbox Test Credentials
-                </span>
-                <div className="grid grid-cols-3 gap-1.5 text-[11px]">
-                  <button
-                    type="button"
-                    onClick={() => fillQuickDemo('9123456789', 'customer123')}
-                    className="p-1.5 rounded-md border border-stone-200 bg-stone-50 hover:bg-stone-100 text-left cursor-pointer"
-                  >
-                    <div className="font-semibold text-stone-800">Customer</div>
-                    <div className="font-mono text-[9px] text-stone-500">Ravi Kumar</div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => fillQuickDemo('9876543210', 'supplier123')}
-                    className="p-1.5 rounded-md border border-stone-200 bg-stone-50 hover:bg-stone-100 text-left cursor-pointer"
-                  >
-                    <div className="font-semibold text-stone-800">Dealer Yard</div>
-                    <div className="font-mono text-[9px] text-stone-500">Gupta Materials</div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => fillQuickDemo('9999999999', 'admin123')}
-                    className="p-1.5 rounded-md border border-stone-200 bg-stone-50 hover:bg-stone-100 text-left cursor-pointer"
-                  >
-                    <div className="font-semibold text-stone-800">Admin</div>
-                    <div className="font-mono text-[9px] text-stone-500">Platform Ops</div>
-                  </button>
-                </div>
-              </div>
-            )}
-          </form>
-        )}
-
-        {/* REGISTER FORM */}
-        {authModalMode === 'REGISTER' && (
-          <form onSubmit={handleRegisterSubmit} className="space-y-3">
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Full Name / Firm Name
-              </label>
+      {/* LOGIN FORM */}
+      {authModalMode === 'LOGIN' && (
+        <form onSubmit={handleLoginSubmit} className="space-y-3.5">
+          <div>
+            <label htmlFor="klink-handleLoginSubmit-1" className="block text-xs font-semibold text-stone-700 mb-1">
+              {t('Mobile Number')}
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-mono font-semibold text-stone-400">
+                +91
+              </span>
               <input
-                type="text"
-                placeholder="e.g. Ramesh Chandra (Chandra Constructions)"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                id="klink-handleLoginSubmit-1"
+                type="tel"
+                placeholder={t('Enter 10-digit mobile number')}
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
                 required
-                className="w-full px-3 py-2 text-xs font-medium border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                className="klink-field w-full pl-11 pr-3 py-2 text-xs font-mono font-semibold text-stone-900 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
               />
             </div>
+          </div>
 
-            <div className="grid grid-cols-2 gap-2.5">
-              <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  10-Digit Mobile
-                </label>
-                <div className="relative">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-mono font-semibold text-stone-400">
-                    +91
-                  </span>
-                  <input
-                    type="tel"
-                    placeholder="9876543210"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                    required
-                    className="w-full pl-9 pr-2 py-2 text-xs font-mono font-semibold text-stone-900 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Delivery District
-                </label>
-                <select
-                  value={districtId || activeDistrict?.id}
-                  onChange={(e) => setDistrictId(e.target.value)}
-                  className="w-full px-2.5 py-2 text-xs font-medium border border-stone-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-stone-900"
-                >
-                  {districts.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name} {d.code === 'DARBHANGA' ? '(Active)' : '(Phase 2)'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Create Password
-              </label>
+          <div>
+            <label htmlFor="klink-handleLoginSubmit-2" className="block text-xs font-semibold text-stone-700 mb-1">
+              {t('Password')}
+            </label>
+            <div className="relative">
               <input
-                type="password"
-                placeholder="Min 6 characters"
+                id="klink-handleLoginSubmit-2"
+                type={showPassword ? 'text' : 'password'}
+                placeholder={t('Enter your password')}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                minLength={6}
-                className="w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                className="klink-field w-full pl-3 pr-9 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
               />
+              <button
+                type="button"
+                aria-label={showPassword ? t('Hide password') : t('Show password')}
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={isLoading || phone.length < 10 || !password}
+            className="klink-primary w-full"
+          >
+            {isLoading ? t('Signing In...') : t('Sign In')}
+          </button>
+
+          {/* Quick Demo Credentials Assistant — Strictly hidden in production unless Demo Mode is enabled */}
+          {isDemoMode && (
+            <div className="pt-2 border-t border-stone-200">
+              <span className="text-[10px] font-mono text-stone-400 uppercase tracking-wider block mb-1.5">
+                Sandbox Test Credentials
+              </span>
+              <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => fillQuickDemo('9123456789', 'customer123')}
+                  className="p-1.5 rounded-md border border-stone-200 bg-stone-50 hover:bg-stone-100 text-left cursor-pointer"
+                >
+                  <div className="font-semibold text-stone-800">Customer</div>
+                  <div className="font-mono text-[9px] text-stone-500">Ravi Kumar</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fillQuickDemo('9876543210', 'supplier123')}
+                  className="p-1.5 rounded-md border border-stone-200 bg-stone-50 hover:bg-stone-100 text-left cursor-pointer"
+                >
+                  <div className="font-semibold text-stone-800">Dealer Yard</div>
+                  <div className="font-mono text-[9px] text-stone-500">Gupta Materials</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fillQuickDemo('9999999999', 'admin123')}
+                  className="p-1.5 rounded-md border border-stone-200 bg-stone-50 hover:bg-stone-100 text-left cursor-pointer"
+                >
+                  <div className="font-semibold text-stone-800">{t('Admin')}</div>
+                  <div className="font-mono text-[9px] text-stone-500">Platform Ops</div>
+                </button>
+              </div>
+            </div>
+          )}
+        </form>
+      )}
+
+      {/* REGISTER FORM */}
+      {authModalMode === 'REGISTER' && (
+        <form onSubmit={handleRegisterSubmit} className="space-y-3">
+          <div>
+            <label htmlFor="klink-handleRegisterSubmit-1" className="block text-xs font-semibold text-stone-700 mb-1">
+              {t('Full Name / Firm Name')}
+            </label>
+            <input
+              id="klink-handleRegisterSubmit-1"
+              type="text"
+              placeholder="e.g. Ramesh Chandra (Chandra Constructions)"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              required
+              className="klink-field w-full px-3 py-2 text-xs font-medium border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5">
+            <div>
+              <label htmlFor="klink-handleRegisterSubmit-2" className="block text-xs font-semibold text-stone-700 mb-1">
+                {t('10-Digit Mobile')}
+              </label>
+              <div className="relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-mono font-semibold text-stone-400">
+                  +91
+                </span>
+                <input
+                  id="klink-handleRegisterSubmit-2"
+                  type="tel"
+                  placeholder="9876543210"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  required
+                  className="klink-field w-full pl-9 pr-2 py-2 text-xs font-mono font-semibold text-stone-900 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                />
+              </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Default Site Address (Optional)
+              <label htmlFor="klink-handleRegisterSubmit-3" className="block text-xs font-semibold text-stone-700 mb-1">
+                {t('Delivery District')}
+              </label>
+              <select
+                id="klink-handleRegisterSubmit-3"
+                value={districtId || activeDistrict?.id}
+                onChange={(e) => setDistrictId(e.target.value)}
+                className="klink-field w-full px-2.5 py-2 text-xs font-medium border border-stone-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-stone-900"
+              >
+                {districts.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} {d.code === 'DARBHANGA' ? '(Active)' : '(Phase 2)'}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="klink-handleRegisterSubmit-4" className="block text-xs font-semibold text-stone-700 mb-1">
+              {t('Create Password')}
+            </label>
+            <input
+              id="klink-handleRegisterSubmit-4"
+              type="password"
+              placeholder={t('Min 6 characters')}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+              className="klink-field w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="klink-handleRegisterSubmit-5" className="block text-xs font-semibold text-stone-700 mb-1">
+              {t('Default Site Address (Optional)')}
+            </label>
+            <input
+              id="klink-handleRegisterSubmit-5"
+              type="text"
+              placeholder="e.g. Near Shiv Mandir, Donar Chowk"
+              value={addressLine}
+              onChange={(e) => setAddressLine(e.target.value)}
+              className="klink-field w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5">
+            <div>
+              <label htmlFor="klink-handleRegisterSubmit-6" className="block text-xs font-semibold text-stone-700 mb-1">
+                {t('Landmark')}
               </label>
               <input
+                id="klink-handleRegisterSubmit-6"
                 type="text"
-                placeholder="e.g. Near Shiv Mandir, Donar Chowk"
-                value={addressLine}
-                onChange={(e) => setAddressLine(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+                placeholder="e.g. Overbridge Bypass"
+                value={landmark}
+                onChange={(e) => setLandmark(e.target.value)}
+                className="klink-field w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
               />
             </div>
-
-            <div className="grid grid-cols-2 gap-2.5">
-              <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Landmark
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Overbridge Bypass"
-                  value={landmark}
-                  onChange={(e) => setLandmark(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  PIN Code
-                </label>
-                <input
-                  type="text"
-                  placeholder="846004"
-                  value={pincode}
-                  onChange={(e) => setPincode(e.target.value.slice(0, 6))}
-                  className="w-full px-3 py-2 text-xs font-mono border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
-                />
-              </div>
+            <div>
+              <label htmlFor="klink-handleRegisterSubmit-7" className="block text-xs font-semibold text-stone-700 mb-1">
+                {t('PIN Code')}
+              </label>
+              <input
+                id="klink-handleRegisterSubmit-7"
+                type="text"
+                placeholder="846004"
+                value={pincode}
+                onChange={(e) => setPincode(e.target.value.slice(0, 6))}
+                className="klink-field w-full px-3 py-2 text-xs font-mono border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
+              />
             </div>
+          </div>
 
-            <button
-              type="submit"
-              disabled={isLoading || !fullName || phone.length < 10 || password.length < 6}
-              className="w-full py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs shadow-xs disabled:opacity-50 transition-all cursor-pointer mt-2"
-            >
-              {isLoading ? 'Creating Account...' : 'Create Account & Start Ordering'}
-            </button>
-          </form>
-        )}
-      </div>
-    </div>
+          <button
+            type="submit"
+            disabled={isLoading || !fullName || phone.length < 10 || password.length < 6}
+            className="klink-primary w-full"
+          >
+            {isLoading ? t('Creating Account...') : t('Create Account & Start Ordering')}
+          </button>
+        </form>
+      )}
+    </SignInDialog>
   );
 };

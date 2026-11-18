@@ -1,3 +1,4 @@
+import { useLanguage, OrderStatus, PaymentStatus } from '@klink/ui';
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../lib/api';
 import { useDistrict } from '../lib/district-context';
@@ -52,6 +53,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
   compareId,
   onSelectCompare
 }) => {
+  const { t, language } = useLanguage();
   const { activeDistrict } = useDistrict();
   const { user, setIsAuthModalOpen, setAuthModalMode } = useAuth();
   const { items, supplierId: cartSupplierId, addItem, updateQuantity, itemCount, finalTotal, deliveryCharge } = useCart();
@@ -279,7 +281,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
 
   // Handle Customer Order Cancellation
   const handleCancelOrder = async (orderId: string) => {
-    if (!window.confirm('Are you sure you want to cancel this pending order?')) return;
+    if (!window.confirm(t('Are you sure you want to cancel this pending order?'))) return;
     try {
       await apiFetch(`/customer/orders/${orderId}/cancel`, { method: 'POST' });
       const res = await apiFetch<any>('/customer/orders');
@@ -310,7 +312,8 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
       p.name.toLowerCase().includes(q) ||
       (p.description || '').toLowerCase().includes(q) ||
       (p.brand?.name || '').toLowerCase().includes(q) ||
-      (p.category?.name || '').toLowerCase().includes(q)
+      (p.category?.name || '').toLowerCase().includes(q) ||
+      (p.category?.hindiName || '').includes(q)
     );
   });
 
@@ -348,7 +351,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
     <div className="pb-32 pt-4 w-full px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16 space-y-6 animate-in fade-in duration-200">
       {/* Top Segmented Navigation (Browse Yards vs Orders) */}
       <div className="flex items-center justify-between border-b border-slate-200/80 pb-3 flex-wrap gap-2">
-        <div className="flex items-center space-x-1.5 bg-slate-100 p-1 rounded-2xl">
+        <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-2xl">
           <button
             onClick={() => {
               setSubTab('shop');
@@ -361,11 +364,12 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
             }`}
           >
             <Store className="w-3.5 h-3.5 text-amber-400" />
-            <span>Darbhanga Yards & Depots</span>
+            <span>{t('Find materials')}</span>
           </button>
 
           <button
             onClick={() => setSubTab('orders')}
+            aria-current={subTab === 'orders' ? 'page' : undefined}
             className={`px-4 py-2 text-xs font-black rounded-xl transition-all flex items-center space-x-2 cursor-pointer ${
               subTab === 'orders'
                 ? 'bg-slate-900 text-white shadow-md'
@@ -373,7 +377,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
             }`}
           >
             <Truck className="w-3.5 h-3.5 text-amber-400" />
-            <span>My Site Orders</span>
+            <span>{t('My orders')}</span>
             {orders.length > 0 && (
               <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-slate-950 text-[10px] font-black">
                 {orders.length}
@@ -382,10 +386,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
           </button>
         </div>
 
-        <div className="hidden sm:flex items-center space-x-2 text-xs font-bold text-slate-700 bg-emerald-50 text-emerald-800 px-3 py-1 rounded-full border border-emerald-200">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>3 Local Yards Online for Same-Day Dispatch</span>
-        </div>
+
       </div>
 
       {/* VIEW 1: MY SITE ORDERS & LIVE TRACKING */}
@@ -393,11 +394,11 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <h2 className="text-sm font-mono font-semibold uppercase tracking-wider text-stone-900">Site Orders & Live Fleet Status</h2>
-              <p className="text-xs text-stone-500 mt-0.5">Track real-time tractor dispatch and site material drops</p>
+              <h2 className="text-sm font-mono font-semibold uppercase tracking-wider text-stone-900">{t('My orders')}</h2>
+              <p className="text-xs text-stone-500 mt-0.5">{t('Track real-time tractor dispatch and site material drops')}</p>
             </div>
             <span className="text-xs font-mono text-stone-600 bg-stone-100 border border-stone-200 px-3 py-1 rounded-lg self-start sm:self-auto">
-              {orders.length} Total Orders
+              {orders.length} {t('Total Orders')}
             </span>
           </div>
 
@@ -405,19 +406,19 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
           {user && orderSummary && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="p-3.5 rounded-xl border border-stone-200 bg-white shadow-2xs">
-                <span className="block text-[11px] font-mono uppercase tracking-wider text-stone-500">Total Billed</span>
+                <span className="block text-[11px] font-mono uppercase tracking-wider text-stone-500">{t('Total Billed')}</span>
                 <span className="text-sm font-mono font-bold text-stone-900 tabular-nums">
                   ₹{(orderSummary.totalPurchased || 0).toLocaleString('en-IN')}
                 </span>
               </div>
               <div className="p-3.5 rounded-xl border border-stone-200 bg-white shadow-2xs">
-                <span className="block text-[11px] font-mono uppercase tracking-wider text-stone-500">Total Paid</span>
+                <span className="block text-[11px] font-mono uppercase tracking-wider text-stone-500">{t('Total Paid')}</span>
                 <span className="text-sm font-mono font-bold text-emerald-700 tabular-nums">
                   ₹{(orderSummary.totalPaid || 0).toLocaleString('en-IN')}
                 </span>
               </div>
               <div className="p-3.5 rounded-xl border border-rose-200 bg-rose-50/50 shadow-2xs">
-                <span className="block text-[11px] font-mono uppercase tracking-wider text-rose-600">Pending Udhaar Dues</span>
+                <span className="block text-[11px] font-mono uppercase tracking-wider text-rose-600">{t('Pending Udhaar Dues')}</span>
                 <span className="text-sm font-mono font-bold text-rose-700 tabular-nums">
                   ₹{(orderSummary.totalOutstanding || 0).toLocaleString('en-IN')}
                 </span>
@@ -430,7 +431,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
               <div className="w-12 h-12 rounded-xl bg-stone-100 text-stone-900 border border-stone-200 flex items-center justify-center mx-auto text-xl">
                 <Truck className="w-5 h-5" />
               </div>
-              <p className="text-base font-semibold text-stone-900">Sign In to Track Site Deliveries</p>
+              <p className="text-base font-semibold text-stone-900">{t('Sign In to Track Site Deliveries')}</p>
               <p className="text-xs text-stone-500 max-w-sm mx-auto">
                 Access real-time tractor dispatch notifications, electronic delivery challans, and Udhaar balance ledgers.
               </p>
@@ -441,7 +442,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                 }}
                 className="mt-2 px-5 py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs shadow-xs cursor-pointer"
               >
-                Sign In with Mobile
+                {t('Sign In with Mobile')}
               </button>
             </div>
           ) : orders.length === 0 ? (
@@ -449,7 +450,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
               <div className="w-12 h-12 rounded-xl bg-stone-100 text-stone-900 border border-stone-200 flex items-center justify-center mx-auto text-xl">
                 <Truck className="w-5 h-5" />
               </div>
-              <p className="text-base font-semibold text-stone-900">No site orders placed yet</p>
+              <p className="text-base font-semibold text-stone-900">{t('No site orders placed yet')}</p>
               <p className="text-xs text-stone-500 max-w-sm mx-auto">
                 Select any verified Darbhanga yard, pick your cement, sariya, sand or bricks, and place your first direct site delivery.
               </p>
@@ -457,7 +458,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                 onClick={() => setSubTab('shop')}
                 className="mt-2 px-5 py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs shadow-xs cursor-pointer"
               >
-                Browse Yards Now
+                {t('Browse Yards Now')}
               </button>
             </div>
           ) : (
@@ -484,7 +485,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                                 : 'bg-slate-100 text-slate-800'
                             }`}
                           >
-                            {order.status}
+                            <OrderStatus status={order.status} />
                           </span>
                           <span
                             className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
@@ -493,7 +494,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                                 : 'bg-amber-50 text-amber-700'
                             }`}
                           >
-                            Payment: {order.paymentStatus}
+                            <PaymentStatus status={order.paymentStatus} />
                           </span>
                           {order.deliveryChallanNo && (
                             <span className="text-[10px] text-slate-500 font-mono bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
@@ -528,7 +529,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                             onClick={() => handleCancelOrder(order.id)}
                             className="px-3 py-1 rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-semibold transition-colors cursor-pointer"
                           >
-                            Cancel Order
+                            {t('Cancel Order')}
                           </button>
                         )}
                       </div>
@@ -543,7 +544,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                             : 'bg-slate-50 text-slate-400'
                         }`}
                       >
-                        1. Placed
+                        {t('Placed')}
                       </div>
                       <div
                         className={`p-2 rounded-xl font-bold ${
@@ -552,7 +553,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                             : 'bg-slate-50 text-slate-400'
                         }`}
                       >
-                        2. Confirmed
+                        {t('Confirmed')}
                       </div>
                       <div
                         className={`p-2 rounded-xl font-bold ${
@@ -561,7 +562,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                             : 'bg-slate-50 text-slate-400'
                         }`}
                       >
-                        3. In Transit
+                        {t('Out for delivery')}
                       </div>
                       <div
                         className={`p-2 rounded-xl font-bold ${
@@ -570,7 +571,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                             : 'bg-slate-50 text-slate-400'
                         }`}
                       >
-                        4. Delivered
+                        {t('Delivered')}
                       </div>
                     </div>
 
@@ -614,7 +615,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                           Site Drop Address: <strong>{order.deliveryAddress}</strong>
                         </span>
                         <span>
-                          Carriage: <strong>₹{order.deliveryCharge || 0}</strong>
+                          {t('Delivery charge')} <strong>₹{order.deliveryCharge || 0}</strong>
                         </span>
                       </div>
                     </div>
@@ -627,42 +628,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
       ) : activeSupplierId === null ? (
         /* VIEW 2: ZOMATO/SWIGGY STYLE YARDS DIRECTORY */
         <div className="space-y-6">
-          {/* Architectural Hero Slab */}
-          <div className="rounded-2xl bg-stone-900 border border-stone-800 text-white p-6 sm:p-8 relative overflow-hidden shadow-subtle">
-            <div className="relative z-10 max-w-3xl space-y-3">
-              <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-stone-800 border border-stone-700 text-stone-300 text-xs font-medium">
-                <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span>DIRECT WHOLESALE DISPATCH • {activeDistrict?.name?.toUpperCase() || 'DARBHANGA'}</span>
-              </div>
-
-              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white leading-tight">
-                Wholesale Construction Materials from <br className="hidden sm:inline" />
-                <span className="text-amber-400">
-                  Authorized Local Yards & Depots
-                </span>
-              </h1>
-
-              <p className="text-xs sm:text-sm text-stone-400 max-w-2xl leading-relaxed">
-                Compare multi-dealer quotes for Cement, TMT Steel, Sand, and Bricks or browse individual yard inventories for bundled site delivery across {activeDistrict?.name || 'Darbhanga'}.
-              </p>
-
-              {/* Value Badges */}
-              <div className="pt-2 flex items-center flex-wrap gap-2 text-xs text-stone-300">
-                <span className="px-3 py-1.5 rounded-lg bg-stone-800/80 border border-stone-700/60 font-medium flex items-center space-x-1.5">
-                  <Truck className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Same-Day Tractor Dump</span>
-                </span>
-                <span className="px-3 py-1.5 rounded-lg bg-stone-800/80 border border-stone-700/60 font-medium flex items-center space-x-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>100% Genuine ISI / BIS Certified</span>
-                </span>
-                <span className="px-3 py-1.5 rounded-lg bg-stone-800/80 border border-stone-700/60 font-medium flex items-center space-x-1.5">
-                  <IndianRupee className="w-3.5 h-3.5 text-stone-300" />
-                  <span>Wholesale COD / UPI / Udhaar</span>
-                </span>
-              </div>
-            </div>
-          </div>
+          <h1 className="text-2xl font-semibold text-stone-900">{t('Find materials')}</h1>
 
           {/* Search Bar */}
           <div className="relative">
@@ -671,8 +637,9 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search materials or yards (e.g. UltraTech, Tata Tiscon, Sone Sand, Gupta Materials)..."
-              className="w-full pl-11 pr-4 py-3 bg-white border border-stone-200/90 rounded-xl text-xs sm:text-sm font-medium text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-stone-400 focus:outline-none shadow-subtle transition-all"
+              aria-label={t('Search materials or suppliers')}
+              placeholder={t('Search materials or suppliers')}
+              className="klink-field w-full pl-11 pr-16 py-3 bg-white border border-stone-200/90 rounded-xl text-xs sm:text-sm font-medium text-stone-900 placeholder:text-stone-400 focus:ring-2 focus:ring-stone-400 focus:outline-none shadow-subtle transition-all"
             />
             {searchQuery && (
               <button
@@ -680,14 +647,14 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                 onClick={() => setSearchQuery('')}
                 className="absolute right-4 top-3 text-xs font-medium text-stone-400 hover:text-stone-600 cursor-pointer"
               >
-                Clear
+                {t('Clear')}
               </button>
             )}
           </div>
 
           {/* Dual-Discovery Mode Switcher */}
           <div className="flex items-center justify-between flex-wrap gap-3 pb-1 border-b border-stone-200">
-            <div className="flex items-center space-x-1.5 bg-stone-100 p-1 rounded-xl">
+            <div className="flex flex-wrap items-center gap-1.5 bg-stone-100 p-1 rounded-xl">
               <button
                 type="button"
                 onClick={() => setDiscoveryMode('materials')}
@@ -698,7 +665,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                 }`}
               >
                 <Scale className="w-3.5 h-3.5 text-amber-400" />
-                <span>Compare Materials & Landed Rates</span>
+                <span>{t('Find materials')}</span>
               </button>
               <button
                 type="button"
@@ -710,14 +677,14 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                 }`}
               >
                 <Store className="w-3.5 h-3.5 text-amber-400" />
-                <span>Browse Local Yards & Depots ({filteredSuppliers.length})</span>
+                <span>{t('Browse suppliers')} ({filteredSuppliers.length})</span>
               </button>
             </div>
 
             <div className="text-xs text-stone-500 font-medium hidden sm:block">
               {discoveryMode === 'materials'
-                ? 'Select any material below to compare quotes across authorized Darbhanga dealers'
-                : 'Browse by specific yard storefront for bundled single-dealer dispatches'}
+                ? t('Choose a material to compare prices and delivery charges.')
+                : t('Choose a supplier to see their materials.')}
             </div>
           </div>
 
@@ -735,7 +702,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                       : 'bg-white border border-stone-200 text-stone-700 hover:bg-stone-50'
                   }`}
                 >
-                  All Materials (सभी सामग्री)
+                  {t('All materials')}
                 </button>
                 {categories.map((cat) => (
                   <button
@@ -748,10 +715,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                         : 'bg-white border border-stone-200 text-stone-700 hover:bg-stone-50'
                     }`}
                   >
-                    <span>{cat.name}</span>
-                    {cat.hindiName && (
-                      <span className="opacity-75 font-normal text-[11px]">({cat.hindiName})</span>
-                    )}
+                    <span>{language === 'hi' ? cat.hindiName || cat.name : cat.name}</span>
                   </button>
                 ))}
               </div>
@@ -764,7 +728,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                 </div>
               ) : filteredMasterProducts.length === 0 ? (
                 <div className="p-12 text-center bg-white rounded-xl border border-stone-200 text-stone-500 text-xs">
-                  No materials found matching your search.
+                  {t('No materials found matching your search.')}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-4">
@@ -776,7 +740,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                       <div className="space-y-2.5">
                         <div className="flex items-start justify-between">
                           <span className="px-2 py-0.5 rounded text-[10px] font-semibold text-stone-500 bg-stone-100 uppercase tracking-wider">
-                            {p.category?.name} {p.category?.hindiName ? `(${p.category.hindiName})` : ''}
+                            {language === 'hi' ? p.category?.hindiName || p.category?.name : p.category?.name}
                           </span>
                           {p.brand && (
                             <span className="font-mono text-[11px] font-semibold text-stone-700 bg-stone-100 px-2 py-0.5 rounded">
@@ -790,21 +754,21 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                             {p.name}
                           </h3>
                           <p className="text-xs text-stone-500 mt-1 line-clamp-2 leading-relaxed">
-                            {p.description || 'Standard construction material conforming to IS certification.'}
+                            {p.description || t('Standard construction material conforming to IS certification.')}
                           </p>
                         </div>
 
                         {/* Specification Grid */}
                         <div className="bg-[#FAF9F6] rounded-lg p-2.5 my-2 border border-stone-200/60 grid grid-cols-2 gap-2 text-xs">
                           <div>
-                            <span className="text-[10px] uppercase font-medium text-stone-400 block">Unit</span>
+                            <span className="text-[10px] uppercase font-medium text-stone-400 block">{t('Unit')}</span>
                             <span className="font-mono font-semibold text-stone-800">1 {p.defaultUnit}</span>
                           </div>
                           <div>
-                            <span className="text-[10px] uppercase font-medium text-stone-400 block">Status</span>
+                            <span className="text-[10px] uppercase font-medium text-stone-400 block">{t('Status')}</span>
                             <span className="font-mono font-semibold text-emerald-700 flex items-center">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1" />
-                              Active Stock
+                              {t('Active Stock')}
                             </span>
                           </div>
                         </div>
@@ -814,10 +778,10 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                         <button
                           type="button"
                           onClick={() => handleOpenCompare(p)}
-                          className="w-full py-2.5 px-3 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-medium text-xs flex items-center justify-center space-x-1.5 transition-colors shadow-subtle cursor-pointer"
+                          className="klink-primary w-full flex items-center justify-center gap-2"
                         >
                           <Scale className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Compare Quotes Across Yards</span>
+                          <span>{t('Compare suppliers')}</span>
                         </button>
                       </div>
                     </div>
@@ -1075,7 +1039,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                                 : 'bg-amber-50 text-amber-800 border border-amber-200'
                             }`}
                           >
-                            Stock: {prod.stockQuantity} {prod.unit}
+                            {t('Stock:')} {prod.stockQuantity} {prod.unit}
                           </span>
                         </div>
 
@@ -1089,7 +1053,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                         </div>
 
                         <div className="text-[11px] text-slate-500">
-                          Min Order: <strong>{prod.minOrderQty} {prod.unit}</strong> • Freight: ₹{prod.deliveryCharge}
+                          {t('Min Order:')} <strong>{prod.minOrderQty} {prod.unit}</strong> • Freight: ₹{prod.deliveryCharge}
                         </div>
                       </div>
 
@@ -1232,7 +1196,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                 </div>
 
                 <div className="flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-amber-500 text-slate-950 font-black text-xs shadow-md">
-                  <span>View Cart</span>
+                  <span>{t('View Cart')}</span>
                   <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
                 </div>
               </div>

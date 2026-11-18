@@ -1,3 +1,4 @@
+import { useLanguage, LanguageSwitch, PageHeader } from '@klink/ui';
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../lib/auth-context';
 import { useDistrict } from '../lib/district-context';
@@ -22,6 +23,7 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpenCart }) => {
+  const { t } = useLanguage();
   const {
     user,
     logout,
@@ -70,9 +72,9 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
       : 'Materials Exchange • Bihar';
 
   return (
-    <header className="sticky top-0 z-40 bg-stone-950/95 backdrop-blur-md border-b border-stone-800 text-stone-100 shadow-sm transition-all">
+    <PageHeader>
       <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16">
-        <div className="flex flex-wrap items-center justify-between gap-y-2 py-2 sm:h-16 sm:flex-nowrap sm:py-0">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-2 sm:min-h-16">
           {/* Left: Brand Identity & Location Hub */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-4">
             <div
@@ -109,9 +111,11 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
 
             {/* District Hub Selector (Shown on Marketplace & Unified modes) */}
             {(appMode === 'CUSTOMER' || appMode === 'UNIFIED') && (
-              <div className="relative" ref={districtRef}>
+              <div className="klink-district" ref={districtRef}>
                 <button
                   onClick={() => setDistrictDropdownOpen(!districtDropdownOpen)}
+                  aria-expanded={districtDropdownOpen}
+                  aria-label={`${t('Delivery District')}: ${activeDistrict?.name || 'Darbhanga'}`}
                   className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-stone-900 border border-stone-800 text-stone-300 text-xs font-medium hover:border-stone-700 hover:text-stone-100 transition-all cursor-pointer"
                 >
                   <div className="w-2 h-2 rounded-full bg-emerald-500" />
@@ -127,10 +131,10 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
                 </button>
 
                 {districtDropdownOpen && (
-                  <div className="absolute left-0 mt-2 w-64 rounded-xl bg-stone-900 border border-stone-800 shadow-2xl py-2 z-50 text-stone-200 divide-y divide-stone-800 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="klink-district-menu mt-2 w-64 rounded-xl bg-stone-900 border border-stone-800 shadow-2xl py-2 z-50 text-stone-200 divide-y divide-stone-800 animate-in fade-in zoom-in-95 duration-150">
                     <div className="px-3.5 py-1.5 text-[10px] font-mono text-stone-400 uppercase tracking-widest flex items-center justify-between">
-                      <span>Bihar Delivery Hubs</span>
-                      <span className="text-stone-500 text-[9px]">{districts.length} Districts</span>
+                      <span>{t('Bihar Delivery Hubs')}</span>
+                      <span className="text-stone-500 text-[9px]">{districts.length} {t('Districts')}</span>
                     </div>
                     <div className="py-1">
                       {districts.map((d) => (
@@ -151,11 +155,11 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
                             <span className="font-medium">{d.name}</span>
                             {d.isActive ? (
                               <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-emerald-950/80 text-emerald-400 border border-emerald-800/60">
-                                Active
+                                {t('Active')}
                               </span>
                             ) : (
                               <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-stone-800 text-stone-500">
-                                Phase 2
+                                {t('Phase 2')}
                               </span>
                             )}
                           </div>
@@ -186,7 +190,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
                 }`}
               >
                 <HardHat className="w-3.5 h-3.5 text-stone-300" />
-                <span>Contractor Marketplace</span>
+                <span>{t('Contractor Marketplace')}</span>
               </button>
 
               <button
@@ -201,7 +205,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
                 }`}
               >
                 <Store className="w-3.5 h-3.5 text-stone-300" />
-                <span>Supplier Yard OS</span>
+                <span>{t('Supplier Yard OS')}</span>
               </button>
 
               <button
@@ -216,13 +220,14 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
                 }`}
               >
                 <Shield className="w-3.5 h-3.5 text-stone-300" />
-                <span>Platform Catalog</span>
+                <span>{t('Platform Catalog')}</span>
               </button>
             </div>
           )}
 
           {/* Right: Auth Controls & Shopping Cart */}
-          <div className="ml-auto flex items-center space-x-2.5 sm:space-x-3.5">
+          <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
+            <LanguageSwitch />
             {isDemoMode ? (
               <div className="relative" ref={personaRef}>
                 <button
@@ -240,14 +245,14 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
                   />
                   <div className="text-left leading-tight hidden sm:block">
                     <div className="font-semibold text-stone-200 text-xs truncate max-w-[130px]">
-                      {user ? user.name : 'Demo Sandbox'}
+                      {user ? user.name : t('Demo Sandbox')}
                     </div>
                     <div className="text-[10px] font-mono text-stone-500 uppercase tracking-wider">
                       {user?.role === 'SUPPLIER'
-                        ? 'Yard Operator'
+                        ? t('Yard Operator')
                         : user?.role === 'ADMIN'
-                        ? 'Platform Admin'
-                        : 'Site Buyer'}
+                        ? t('Platform Admin')
+                        : t('Site Buyer')}
                     </div>
                   </div>
                   <ChevronDown
@@ -258,13 +263,13 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
                 </button>
 
                 {personaDropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-72 rounded-xl bg-stone-900 border border-stone-800 shadow-2xl p-2 z-50 text-stone-200 divide-y divide-stone-800 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="absolute right-0 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-xl bg-stone-900 border border-stone-800 shadow-2xl p-2 z-50 text-stone-200 divide-y divide-stone-800 animate-in fade-in zoom-in-95 duration-150">
                     <div className="px-3 py-1.5 flex items-center justify-between">
                       <div>
                         <span className="text-[10px] font-mono text-stone-400 uppercase tracking-widest block">
-                          Demo Sandbox Active
+                          {t('Demo Sandbox Active')}
                         </span>
-                        <span className="text-[11px] text-stone-500">1-Click Role Simulation</span>
+                        <span className="text-[11px] text-stone-500">{t('1-Click Role Simulation')}</span>
                       </div>
                       <button
                         onClick={() => {
@@ -273,7 +278,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
                         }}
                         className="text-[10px] font-mono px-2 py-0.5 rounded border border-stone-700 bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer"
                       >
-                        Exit Demo
+                        {t('Exit Demo')}
                       </button>
                     </div>
                   </div>
@@ -294,7 +299,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
                     </div>
                     <button
                       onClick={logout}
-                      title="Log Out"
+                      title={t('Log Out')}
                       className="p-1 rounded-md text-stone-400 hover:text-stone-100 hover:bg-stone-800 cursor-pointer ml-1"
                     >
                       <LogOut className="w-3.5 h-3.5" />
@@ -311,7 +316,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
                         className="px-3 py-1.5 rounded-lg bg-stone-900 border border-stone-800 hover:border-stone-700 text-stone-200 text-xs font-semibold flex items-center space-x-1.5 cursor-pointer shadow-xs"
                       >
                         <LogIn className="w-3.5 h-3.5" />
-                        <span>Sign In</span>
+                        <span>{t('Sign In')}</span>
                       </button>
                       <button
                         onClick={() => {
@@ -320,7 +325,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
                         }}
                         className="hidden sm:inline-flex px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-white text-stone-950 text-xs font-semibold cursor-pointer shadow-xs"
                       >
-                        Register
+                        {t('Register')}
                       </button>
                     </div>
                   )
@@ -331,7 +336,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
                     onClick={() => setDemoMode(true)}
                     className="px-2 py-1 text-[10px] font-mono rounded border border-stone-800 text-stone-400 hover:text-stone-200 hover:bg-stone-900 cursor-pointer"
                   >
-                    Demo
+                    {t('Demo')}
                   </button>
                 )}
               </div>
@@ -341,10 +346,11 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
             {(appMode === 'CUSTOMER' || (appMode === 'UNIFIED' && currentTab === 'customer')) && (
               <button
                 onClick={onOpenCart}
+                aria-label={t('Cart')}
                 className="relative flex items-center space-x-2 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-stone-100 hover:bg-white text-stone-900 font-semibold text-xs transition-colors shadow-2xs cursor-pointer font-mono"
               >
                 <ShoppingCart className="w-4 h-4 text-stone-900" />
-                <span className="hidden sm:inline">Requisition</span>
+                <span>{t('Cart')}</span>
                 {itemCount > 0 ? (
                   <span className="px-1.5 py-0.2 rounded-full bg-stone-900 text-white text-[10px] font-mono">
                     {itemCount}
@@ -355,6 +361,6 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab, onOpe
           </div>
         </div>
       </div>
-    </header>
+    </PageHeader>
   );
 };

@@ -1,0 +1,118 @@
+.klink-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: #1c1917;
+  color: #fafaf9;
+  border-bottom: 1px solid #44403c;
+}
+
+.klink-language {
+  display: inline-flex;
+  gap: 0.125rem;
+  flex: 0 0 auto;
+  padding: 0.125rem;
+  border-radius: 0.625rem;
+  background: #f5f5f4;
+  color: #292524;
+}
+
+.klink-language button {
+  padding: 0.375rem 0.5rem;
+  min-height: 2.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  font-weight: 600;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.klink-language button[aria-pressed='true'] {
+  background: #292524;
+  color: #fff;
+}
+
+.klink-shell :is(button, input, select, textarea, a):focus-visible {
+  outline: 2px solid #0369a1;
+  outline-offset: 2px;
+}
+
+.klink-header :is(button, a):focus-visible,
+.klink-nav :is(button, a):focus-visible {
+  outline-color: #fbbf24;
+}
+
+.klink-nav button {
+  min-width: 0;
+  min-height: 2.75rem;
+  padding-inline: 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+.klink-primary {
+  background: #292524;
+  color: #fff;
+  border-radius: 0.625rem;
+  padding: 0.625rem 1rem;
+  min-height: 2.75rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.klink-primary:hover { background: #44403c; }
+.klink-primary:disabled { opacity: 0.6; cursor: default; }
+
+.klink-field {
+  min-height: 2.75rem;
+  font-size: 1rem;
+}
+
+.klink-notice {
+  padding: 0.75rem;
+  border: 1px solid #a7f3d0;
+  border-radius: 0.625rem;
+  background: #ecfdf5;
+  color: #064e3b;
+  font-size: 0.875rem;
+}
+
+.klink-notice[role='alert'] {
+  border-color: #fecdd3;
+  background: #fff1f2;
+  color: #881337;
+}
+
+@media (max-width: 767px) {
+  .klink-header { position: relative; }
+}
+
+.klink-auth {
+  width: min(28rem, calc(100% - 2rem));
+  max-height: calc(100% - 2rem);
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #e7e5e4;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  box-shadow: 0 16px 40px rgb(28 25 23 / 20%);
+}
+
+.klink-auth > * + * { margin-block-start: 1rem; }
+.klink-auth > button:first-child { margin-block-start: 0; }
+
+.klink-auth::backdrop {
+  background: rgb(12 10 9 / 60%);
+}
+
+.klink-district { position: relative; }
+
+.klink-district-menu {
+  position: absolute;
+  inset-inline-start: 0;
+}
+
+@media (max-width: 479px) {
+  .klink-district { position: static; }
+  .klink-district-menu { inset-inline-start: 1rem; }
+}

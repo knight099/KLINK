@@ -1,3 +1,4 @@
+import { useLanguage, LanguageSwitch, FormError, type Message } from '@klink/ui';
 import React, { useState, useEffect } from 'react';
 import { useCart } from '../lib/cart-context';
 import { useDistrict } from '../lib/district-context';
@@ -27,6 +28,7 @@ interface CartDrawerProps {
 }
 
 export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrderSuccess }) => {
+  const { t } = useLanguage();
   const {
     items,
     supplierId,
@@ -49,7 +51,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
   const [instructions, setInstructions] = useState('Call 30 mins before arrival. Site entrance is wide for tractor/truck.');
   const [paymentChoice, setPaymentChoice] = useState<'COD' | 'UPI' | 'UDHAAR'>('COD');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message?: string; status?: number; fallback: Message } | null>(null);
   const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [saveThisAddress, setSaveThisAddress] = useState(false);
@@ -104,11 +106,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
     }
     if (!supplierId || items.length === 0) return;
     if (!activeDistrict) {
-      setError('Please select a district');
+      setError({ fallback: 'Please select a district' });
       return;
     }
     if (!addressLine.trim()) {
-      setError('Please enter a delivery site address');
+      setError({ fallback: 'Please enter a delivery site address' });
       return;
     }
 
@@ -152,7 +154,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
       onClose();
       onOrderSuccess(res.order);
     } catch (err: any) {
-      setError(err.message || 'Failed to place order');
+      setError({ message: err.message, status: err?.status, fallback: 'Failed to place order' });
     } finally {
       setIsSubmitting(false);
     }
@@ -162,21 +164,23 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
     <div className="fixed inset-0 z-50 overflow-hidden bg-stone-950/60 backdrop-blur-xs flex justify-end animate-in fade-in duration-200">
       <div className="w-full max-w-lg bg-[#FAF9F6] h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-200 border-l border-stone-200">
         {/* Drawer Header */}
-        <div className="p-4 sm:p-5 border-b border-stone-800 flex items-center justify-between bg-stone-900 text-white">
+        <div className="p-4 sm:p-5 border-b border-stone-800 flex flex-wrap items-center justify-between gap-2 bg-stone-900 text-white">
           <div className="flex items-center space-x-3">
             <div className="w-9 h-9 rounded-xl bg-stone-800 border border-stone-700 flex items-center justify-center text-stone-300">
               <Truck className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold tracking-tight text-stone-100">Site Requisition Cart</h2>
+              <h2 className="text-sm font-semibold tracking-tight text-stone-100">{t('Cart')}</h2>
               {supplierName && (
                 <p className="text-xs text-stone-400 font-mono truncate max-w-[240px]">
-                  Yard: <span className="text-stone-200">{supplierName}</span>
+                  {t('Supplier')}{': '}<span className="text-stone-200">{supplierName}</span>
                 </p>
               )}
             </div>
           </div>
+          <LanguageSwitch />
           <button
+            aria-label={t('Close')}
             onClick={onClose}
             className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
           >
@@ -187,9 +191,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
           {error && (
-            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 font-medium">
-              {error}
-            </div>
+            <FormError failure={error} />
           )}
 
           {items.length === 0 ? (
@@ -197,9 +199,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
               <div className="w-12 h-12 rounded-2xl bg-stone-100 text-stone-500 border border-stone-200 flex items-center justify-center text-xl">
                 🏗️
               </div>
-              <p className="font-semibold text-sm text-stone-900">Your site cart is empty</p>
+              <p className="font-semibold text-sm text-stone-900">{t('Your site cart is empty')}</p>
               <p className="text-xs text-stone-500 max-w-xs">
-                Browse Cement, Sariya, Sand or Aggregate from verified yards in {activeDistrict?.name || 'Darbhanga'}.
+                {t('Find materials to add to your cart.')}
               </p>
             </div>
           ) : (
@@ -212,7 +214,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
 
               {/* Items List */}
               <div className="space-y-2.5">
-                <div className="text-[11px] font-mono uppercase tracking-wider text-stone-400">Bill of Materials</div>
+                <div className="text-[11px] font-mono uppercase tracking-wider text-stone-400">{t('Bill of Materials')}</div>
                 {items.map((item) => (
                   <div
                     key={item.supplierProductId}
@@ -294,7 +296,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
 
               {/* Preferred Payment Terms Selector */}
               <div className="space-y-2.5 pt-2 border-t border-stone-200">
-                <div className="text-[11px] font-mono uppercase tracking-wider text-stone-400">Payment Terms</div>
+                <div className="text-[11px] font-mono uppercase tracking-wider text-stone-400">{t('Payment Terms')}</div>
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   <div
                     onClick={() => setPaymentChoice('COD')}
@@ -305,7 +307,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                     }`}
                   >
                     <IndianRupee className={`w-4 h-4 mx-auto mb-1 ${paymentChoice === 'COD' ? 'text-amber-400' : 'text-stone-500'}`} />
-                    <span className="block text-xs font-semibold">Cash on Dump</span>
+                    <span className="block text-xs font-semibold">{t('Cash on Dump')}</span>
                   </div>
 
                   <div
@@ -317,7 +319,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                     }`}
                   >
                     <QrCode className={`w-4 h-4 mx-auto mb-1 ${paymentChoice === 'UPI' ? 'text-blue-400' : 'text-stone-500'}`} />
-                    <span className="block text-xs font-semibold">UPI on Site</span>
+                    <span className="block text-xs font-semibold">{t('UPI on Site')}</span>
                   </div>
 
                   <div
@@ -329,13 +331,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                     }`}
                   >
                     <CreditCard className={`w-4 h-4 mx-auto mb-1 ${paymentChoice === 'UDHAAR' ? 'text-emerald-400' : 'text-stone-500'}`} />
-                    <span className="block text-xs font-semibold">Yard Udhaar</span>
+                    <span className="block text-xs font-semibold">{t('Yard Udhaar')}</span>
                   </div>
                 </div>
 
                 <p className="text-xs text-stone-500">
-                  This is your payment preference. No payment is collected at checkout.
-                  The full order amount remains due until the yard records a received payment.
+                  {t('This is your payment preference. No payment is collected at checkout.')}
+                  {t('The full order amount remains due until the yard records a received payment.')}
                 </p>
               </div>
 
@@ -359,7 +361,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                 {/* Saved Site Addresses Selector */}
                 {savedAddresses.length > 0 && (
                   <div className="space-y-1.5">
-                    <span className="text-[10px] font-mono text-stone-400 uppercase tracking-wider">Saved Site Locations:</span>
+                    <span className="text-[10px] font-mono text-stone-400 uppercase tracking-wider">{t('Saved Site Locations:')}</span>
                     <div className="flex flex-wrap gap-1.5">
                       {savedAddresses.map((addr) => {
                         const isSelected = selectedAddressId === addr.id;
@@ -404,11 +406,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                 )}
 
                 <div>
-                  <label className="block text-xs font-medium text-stone-700 mb-1">
-                    Delivery Address (Plot / Ward / Road)
+                  <label htmlFor="klink-cart-addressLine" className="block text-xs font-medium text-stone-700 mb-1">
+                    {t('Delivery Address (Plot / Ward / Road)')}
                   </label>
                   <input
                     type="text"
+                    id="klink-cart-addressLine"
                     value={addressLine}
                     onChange={(e) => {
                       setAddressLine(e.target.value);
@@ -422,11 +425,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
 
                 <div className="grid grid-cols-3 gap-2 sm:gap-3">
                   <div className="col-span-1">
-                    <label className="block text-xs font-medium text-stone-700 mb-1">PIN Code</label>
+                    <label htmlFor="klink-cart-pincode" className="block text-xs font-medium text-stone-700 mb-1">{t('PIN Code')}</label>
                     <input
                       type="text"
                       maxLength={6}
-                      value={pincode}
+                      id="klink-cart-pincode"
+                    value={pincode}
                       onChange={(e) => setPincode(e.target.value)}
                       required
                       className="w-full px-3 py-2 text-xs font-mono bg-white border border-stone-200 rounded-xl focus:border-stone-800 focus:outline-none"
@@ -434,10 +438,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                     />
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-xs font-medium text-stone-700 mb-1">Landmark</label>
+                    <label htmlFor="klink-cart-landmark" className="block text-xs font-medium text-stone-700 mb-1">{t('Landmark')}</label>
                     <input
                       type="text"
-                      value={landmark}
+                      id="klink-cart-landmark"
+                    value={landmark}
                       onChange={(e) => setLandmark(e.target.value)}
                       className="w-full px-3.5 py-2 text-xs bg-white border border-stone-200 rounded-xl focus:border-stone-800 focus:outline-none"
                       placeholder="e.g. Behind Saraswati Mandir"
@@ -446,9 +451,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-stone-700 mb-1">Site Receiver Mobile (Mistri / Supervisor)</label>
+                  <label htmlFor="klink-cart-sitePhone" className="block text-xs font-medium text-stone-700 mb-1">{t('Site Receiver Mobile (Mistri / Supervisor)')}</label>
                   <input
                     type="tel"
+                    id="klink-cart-sitePhone"
                     value={sitePhone}
                     onChange={(e) => setSitePhone(e.target.value)}
                     required
@@ -466,16 +472,17 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                       onChange={(e) => setSaveThisAddress(e.target.checked)}
                       className="w-4 h-4 rounded text-stone-900 border-stone-300 focus:ring-stone-800"
                     />
-                    <span>Save this construction site address for future orders</span>
+                    <span>{t('Save this construction site address for future orders')}</span>
                   </label>
                 )}
 
                 <div>
-                  <label className="block text-xs font-medium text-stone-700 mb-1">
-                    Driver / Tractor Special Instructions
+                  <label htmlFor="klink-cart-instructions" className="block text-xs font-medium text-stone-700 mb-1">
+                    {t('Driver / Tractor Special Instructions')}
                   </label>
                   <input
                     type="text"
+                    id="klink-cart-instructions"
                     value={instructions}
                     onChange={(e) => setInstructions(e.target.value)}
                     className="w-full px-3.5 py-2 text-xs bg-white border border-stone-200 rounded-xl focus:border-stone-800 focus:outline-none"
@@ -487,19 +494,19 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
               {/* Price Breakdown */}
               <div className="p-4 rounded-xl bg-white border border-stone-200 space-y-2 text-xs">
                 <div className="flex justify-between text-stone-600">
-                  <span>Materials Subtotal</span>
+                  <span>{t('Materials Subtotal')}</span>
                   <span className="font-mono font-medium text-stone-900 tabular-nums">
                     ₹{totalMaterialAmount.toLocaleString('en-IN')}
                   </span>
                 </div>
                 <div className="flex justify-between text-stone-600">
-                  <span>Tractor / Truck Carriage</span>
+                  <span>{t('Tractor / Truck Carriage')}</span>
                   <span className="font-mono font-medium text-stone-900 tabular-nums">
                     {deliveryCharge > 0 ? `₹${deliveryCharge.toLocaleString('en-IN')}` : 'Included'}
                   </span>
                 </div>
                 <div className="border-t border-dashed border-stone-200 pt-2 flex justify-between text-sm font-semibold text-stone-900">
-                  <span>Total Landed Amount</span>
+                  <span>{t('Total Landed Amount')}</span>
                   <span className="font-mono font-bold text-stone-900 text-base tabular-nums">₹{finalTotal.toLocaleString('en-IN')}</span>
                 </div>
                 <div className="text-[11px] text-stone-400 pt-1">
@@ -516,20 +523,17 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
             <button
               onClick={handleCheckout}
               disabled={isSubmitting}
-              className="w-full py-3.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-medium text-xs sm:text-sm shadow-xs transition-colors flex items-center justify-center space-x-2 disabled:opacity-50 cursor-pointer font-mono"
+              className="klink-primary w-full flex items-center justify-center gap-2"
             >
               <span>
                 {!user
-                  ? 'Sign In to Confirm Site Requisition'
+                  ? t('Sign in to place your order')
                   : isSubmitting
-                  ? 'Submitting Requisition...'
-                  : `Confirm & Dispatch to Site (₹${finalTotal.toLocaleString('en-IN')})`}
+                  ? t('Placing order…')
+                  : `${t('Place order')} (₹${finalTotal.toLocaleString('en-IN')})`}
               </span>
               <ArrowRight className="w-4 h-4 stroke-[2]" />
             </button>
-            <p className="text-[11px] text-center text-stone-400 mt-2 font-mono">
-              Dealer confirms stock & assigns transport vehicle within 15-30 minutes.
-            </p>
           </div>
         )}
       </div>

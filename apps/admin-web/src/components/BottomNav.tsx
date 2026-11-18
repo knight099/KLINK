@@ -1,3 +1,4 @@
+import { useLanguage } from '@klink/ui';
 import React from 'react';
 import {
   Home,
@@ -41,6 +42,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   setAdminSubTab,
   onOpenCart
 }) => {
+  const { t } = useLanguage();
   const { itemCount } = useCart();
   const { user } = useAuth();
   const appMode = getAppMode();
@@ -59,19 +61,20 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   if (activeExperience === 'admin' && (!user || user.role !== 'ADMIN')) return null;
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#141413]/95 backdrop-blur-lg border-t border-stone-800 text-stone-400 safe-bottom shadow-2xl">
+    <nav aria-label={t('Main navigation')} className="klink-nav md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#141413]/95 backdrop-blur-lg border-t border-stone-800 text-stone-400 safe-bottom shadow-2xl">
       <div className="flex items-center justify-around py-2 px-1">
         {/* Customer Marketplace Experience */}
         {activeExperience === 'customer' && (
           <>
             <button
               onClick={() => setCustomerSubTab('shop')}
+              aria-current={customerSubTab === 'shop' ? 'page' : undefined}
               className={`flex flex-col items-center py-1 px-4 rounded-xl text-[11px] font-semibold transition-all cursor-pointer ${
                 customerSubTab === 'shop' ? 'text-stone-100' : 'text-stone-400 hover:text-stone-200'
               }`}
             >
               <Home className="w-4 h-4 mb-0.5" />
-              <span>Catalog</span>
+              <span>{t('Find materials')}</span>
             </button>
 
             <button
@@ -79,7 +82,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               className="relative flex flex-col items-center py-1 px-4 rounded-xl text-[11px] font-semibold text-stone-400 hover:text-stone-200 cursor-pointer"
             >
               <ShoppingBag className="w-4 h-4 mb-0.5" />
-              <span>Requisition</span>
+              <span>{t('Cart')}</span>
               {itemCount > 0 && (
                 <span className="absolute top-0 right-3 w-4 h-4 rounded-full bg-amber-500 text-stone-950 text-[10px] font-mono font-bold flex items-center justify-center shadow-xs">
                   {itemCount}
@@ -89,12 +92,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({
 
             <button
               onClick={() => setCustomerSubTab('orders')}
+              aria-current={customerSubTab === 'orders' ? 'page' : undefined}
               className={`flex flex-col items-center py-1 px-4 rounded-xl text-[11px] font-semibold transition-all cursor-pointer ${
                 customerSubTab === 'orders' ? 'text-stone-100' : 'text-stone-400 hover:text-stone-200'
               }`}
             >
               <ClipboardList className="w-4 h-4 mb-0.5" />
-              <span>Site Orders</span>
+              <span>{t('My orders')}</span>
             </button>
           </>
         )}
@@ -104,6 +108,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <>
             <button
               onClick={() => setSupplierSubTab('dashboard')}
+              aria-current={supplierSubTab === 'dashboard' ? 'page' : undefined}
               className={`flex flex-col items-center py-1 px-2 rounded-xl text-[10px] font-medium transition-all cursor-pointer ${
                 supplierSubTab === 'dashboard'
                   ? 'text-stone-100 font-semibold'
@@ -116,6 +121,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
 
             <button
               onClick={() => setSupplierSubTab('orders')}
+              aria-current={supplierSubTab === 'orders' ? 'page' : undefined}
               className={`flex flex-col items-center py-1 px-2 rounded-xl text-[10px] font-medium transition-all cursor-pointer ${
                 supplierSubTab === 'orders'
                   ? 'text-stone-100 font-semibold'
@@ -123,11 +129,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               }`}
             >
               <ClipboardList className="w-4 h-4 mb-0.5" />
-              <span>Orders</span>
+              <span>{t('Orders')}</span>
             </button>
 
             <button
               onClick={() => setSupplierSubTab('deliveries')}
+              aria-current={supplierSubTab === 'deliveries' ? 'page' : undefined}
               className={`flex flex-col items-center py-1 px-2 rounded-xl text-[10px] font-medium transition-all cursor-pointer ${
                 supplierSubTab === 'deliveries'
                   ? 'text-stone-100 font-semibold'
@@ -135,11 +142,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               }`}
             >
               <Truck className="w-4 h-4 mb-0.5" />
-              <span>Dispatches</span>
+              <span>{t('Dispatches')}</span>
             </button>
 
             <button
               onClick={() => setSupplierSubTab('inventory')}
+              aria-current={supplierSubTab === 'inventory' ? 'page' : undefined}
               className={`flex flex-col items-center py-1 px-2 rounded-xl text-[10px] font-medium transition-all cursor-pointer ${
                 supplierSubTab === 'inventory'
                   ? 'text-stone-100 font-semibold'
@@ -147,11 +155,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               }`}
             >
               <Layers className="w-4 h-4 mb-0.5" />
-              <span>Pricing</span>
+              <span>{t('Pricing')}</span>
             </button>
 
             <button
               onClick={() => setSupplierSubTab('ledger')}
+              aria-current={supplierSubTab === 'ledger' ? 'page' : undefined}
               className={`flex flex-col items-center py-1 px-2 rounded-xl text-[10px] font-medium transition-all cursor-pointer ${
                 supplierSubTab === 'ledger'
                   ? 'text-stone-100 font-semibold'
@@ -159,11 +168,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               }`}
             >
               <Store className="w-4 h-4 mb-0.5" />
-              <span>Udhaar</span>
+              <span>{t('Udhaar')}</span>
             </button>
 
             <button
               onClick={() => setSupplierSubTab('profile')}
+              aria-current={supplierSubTab === 'profile' ? 'page' : undefined}
               className={`flex flex-col items-center py-1 px-2 rounded-xl text-[10px] font-medium transition-all cursor-pointer ${
                 supplierSubTab === 'profile'
                   ? 'text-stone-100 font-semibold'
@@ -171,7 +181,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               }`}
             >
               <Settings className="w-4 h-4 mb-0.5" />
-              <span>Profile</span>
+              <span>{t('Profile')}</span>
             </button>
           </>
         )}
@@ -181,6 +191,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <>
             <button
               onClick={() => setAdminSubTab('overview')}
+              aria-current={adminSubTab === 'overview' ? 'page' : undefined}
               className={`flex flex-col items-center py-1 px-2 rounded-xl text-[10px] font-medium transition-all cursor-pointer ${
                 adminSubTab === 'overview'
                   ? 'text-stone-100 font-semibold'
@@ -188,11 +199,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               }`}
             >
               <Shield className="w-4 h-4 mb-0.5" />
-              <span>GMV</span>
+              <span>{t('GMV')}</span>
             </button>
 
             <button
               onClick={() => setAdminSubTab('orders')}
+              aria-current={adminSubTab === 'orders' ? 'page' : undefined}
               className={`flex flex-col items-center py-1 px-2 rounded-xl text-[10px] font-medium transition-all cursor-pointer ${
                 adminSubTab === 'orders'
                   ? 'text-stone-100 font-semibold'
@@ -200,11 +212,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               }`}
             >
               <Package className="w-4 h-4 mb-0.5" />
-              <span>Orders</span>
+              <span>{t('Orders')}</span>
             </button>
 
             <button
               onClick={() => setAdminSubTab('suppliers')}
+              aria-current={adminSubTab === 'suppliers' ? 'page' : undefined}
               className={`flex flex-col items-center py-1 px-2 rounded-xl text-[10px] font-medium transition-all cursor-pointer ${
                 adminSubTab === 'suppliers'
                   ? 'text-stone-100 font-semibold'
@@ -212,11 +225,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               }`}
             >
               <Store className="w-4 h-4 mb-0.5" />
-              <span>Yards</span>
+              <span>{t('Yards')}</span>
             </button>
 
             <button
               onClick={() => setAdminSubTab('consumers')}
+              aria-current={adminSubTab === 'consumers' ? 'page' : undefined}
               className={`flex flex-col items-center py-1 px-2 rounded-xl text-[10px] font-medium transition-all cursor-pointer ${
                 adminSubTab === 'consumers'
                   ? 'text-stone-100 font-semibold'
@@ -224,11 +238,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               }`}
             >
               <Users className="w-4 h-4 mb-0.5" />
-              <span>Buyers</span>
+              <span>{t('Buyers')}</span>
             </button>
 
             <button
               onClick={() => setAdminSubTab('payments')}
+              aria-current={adminSubTab === 'payments' ? 'page' : undefined}
               className={`flex flex-col items-center py-1 px-2 rounded-xl text-[10px] font-medium transition-all cursor-pointer ${
                 adminSubTab === 'payments'
                   ? 'text-stone-100 font-semibold'
@@ -236,11 +251,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               }`}
             >
               <CreditCard className="w-4 h-4 mb-0.5" />
-              <span>Audit</span>
+              <span>{t('Audit')}</span>
             </button>
 
             <button
               onClick={() => setAdminSubTab('users')}
+              aria-current={adminSubTab === 'users' ? 'page' : undefined}
               className={`flex flex-col items-center py-1 px-2 rounded-xl text-[10px] font-medium transition-all cursor-pointer ${
                 adminSubTab === 'users'
                   ? 'text-stone-100 font-semibold'
@@ -248,7 +264,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               }`}
             >
               <KeyRound className="w-4 h-4 mb-0.5" />
-              <span>Logins</span>
+              <span>{t('Logins')}</span>
             </button>
           </>
         )}

@@ -1,3 +1,5 @@
+import { LanguageProvider } from '@klink/ui';
+import '@klink/ui/styles.css';
 import React from 'react';
 import { AuthProvider } from './lib/auth-context';
 import { DistrictProvider } from './lib/district-context';
@@ -17,7 +19,7 @@ export function AppContent() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-stone-900">
+    <div className="klink-shell min-h-screen flex flex-col bg-[#FAF9F6] text-stone-900">
       <Navbar
         currentTab="admin"
         setCurrentTab={() => {}}
@@ -50,13 +52,15 @@ export function AppContent() {
 
 export function App() {
   return (
-    <AuthProvider>
-      <DistrictProvider>
-        <CartProvider>
-          <AppContent />
-        </CartProvider>
-      </DistrictProvider>
-    </AuthProvider>
+    <LanguageProvider>
+      <AuthProvider>
+        <DistrictProvider>
+          <CartProvider>
+            <AppContent />
+          </CartProvider>
+        </DistrictProvider>
+      </AuthProvider>
+    </LanguageProvider>
   );
 }
 

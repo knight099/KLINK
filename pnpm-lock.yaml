@@ -31,6 +31,9 @@ importers:
       '@klink/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
+      '@klink/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -144,6 +147,9 @@ importers:
       '@klink/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
+      '@klink/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -193,6 +199,9 @@ importers:
       '@klink/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
+      '@klink/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -242,6 +251,9 @@ importers:
       '@klink/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
+      '@klink/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
@@ -334,6 +346,16 @@ importers:
         version: 5.9.3
 
   packages/tsconfig: {}
+
+  packages/ui:
+    dependencies:
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+    devDependencies:
+      '@types/react':
+        specifier: ^18.3.18
+        version: 18.3.31
 
 packages:
 
