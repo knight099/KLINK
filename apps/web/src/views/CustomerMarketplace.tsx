@@ -503,8 +503,8 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                             }`}
                           >
                             {order.balancePending > 0
-                              ? `Pending: ₹${order.balancePending.toLocaleString('en-IN')}`
-                              : 'Paid in Full'}
+                              ? `${t('Amount due')}: ₹${order.balancePending.toLocaleString('en-IN')}`
+                              : order.paymentStatus === 'PAID' ? t('Paid') : t('No balance due')}
                           </span>
                         </div>
                         {order.status === 'PENDING_APPROVAL' && (
@@ -523,7 +523,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                     <div className="grid grid-cols-4 gap-2 text-center text-xs">
                       <div
                         className={`p-2 rounded-xl font-bold ${
-                          ['PENDING', 'CONFIRMED', 'OUT_FOR_DELIVERY', 'DELIVERED'].includes(order.status)
+                          ['PENDING', 'PENDING_APPROVAL', 'CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'COMPLETED'].includes(order.status)
                             ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                             : 'bg-slate-50 text-slate-400'
                         }`}
@@ -532,7 +532,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                       </div>
                       <div
                         className={`p-2 rounded-xl font-bold ${
-                          ['CONFIRMED', 'OUT_FOR_DELIVERY', 'DELIVERED'].includes(order.status)
+                          ['CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'COMPLETED'].includes(order.status)
                             ? 'bg-blue-50 text-blue-800 border border-blue-200'
                             : 'bg-slate-50 text-slate-400'
                         }`}
@@ -541,7 +541,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                       </div>
                       <div
                         className={`p-2 rounded-xl font-bold ${
-                          ['OUT_FOR_DELIVERY', 'DELIVERED'].includes(order.status)
+                          ['OUT_FOR_DELIVERY', 'DELIVERED', 'COMPLETED'].includes(order.status)
                             ? 'bg-amber-50 text-amber-800 border border-amber-200 animate-pulse'
                             : 'bg-slate-50 text-slate-400'
                         }`}
@@ -550,7 +550,7 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                       </div>
                       <div
                         className={`p-2 rounded-xl font-bold ${
-                          order.status === 'DELIVERED'
+                          ['DELIVERED', 'COMPLETED'].includes(order.status)
                             ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                             : 'bg-slate-50 text-slate-400'
                         }`}

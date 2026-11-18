@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { lockSupplier, money } from '../../lib/orders';
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -35,101 +35,124 @@ export const customerRoutes: FastifyPluginAsyncZod = async (fastify) => {
         siteContactPhone
       } = request.body;
 
-      // 1. Validate supplier
-      const supplier = await fastify.prisma.supplier.findUnique({
-        where: { id: supplierId, status: 'ACTIVE' }
-      });
-      if (!supplier) {
-        return reply.status(400).send({ error: 'Supplier not found or not currently active' });
-      }
+      const key = z.string().min(8).max(128).optional().safeParse(request.headers['idempotency-key']);
+      if (!key.success) throw fastify.httpErrors.badRequest('Invalid Idempotency-Key header');
+      const idempotencyKey = key.data
+        ? 'customer:' + createHash('sha256').update(JSON.stringify([customerId, key.data])).digest('hex')
+        : undefined;
+      const requestHash = idempotencyKey
+        ? createHash('sha256').update(JSON.stringify(request.body)).digest('hex')
+        : undefined;
 
-      const serviceArea = await fastify.prisma.supplierServiceArea.findFirst({ where: { supplierId, districtId, isActive: true, district: { isActive: true } } });
-      if (!serviceArea) return reply.status(400).send({ error: 'Supplier does not serve this active district' });
+      const order = await fastify.prisma.$transaction(async (tx) => {
+        await lockSupplier(tx, supplierId);
+        if (idempotencyKey) {
+          const existing = await tx.order.findUnique({
+            where: { supplierId_idempotencyKey: { supplierId, idempotencyKey } },
+            include: { items: true, supplier: true }
+          });
+          if (existing) {
+            if (existing.customerId !== customerId || existing.requestHash !== requestHash) {
+              throw fastify.httpErrors.conflict('Order key already used for a different request');
+            }
+            return existing;
+          }
+        }
 
-      // 2. Fetch all supplier products and validate single-supplier constraint
-      const supplierProductIds = items.map((i) => i.supplierProductId);
-      const supplierProducts = await fastify.prisma.supplierProduct.findMany({
-        where: {
-          id: { in: supplierProductIds },
-          supplierId
-        },
-        include: { masterProduct: true }
-      });
-
-      if (supplierProducts.length !== items.length) {
-        return reply.status(400).send({
-          error: 'All ordered items must belong to the selected supplier (1 cart = 1 supplier)'
+        // 1. Validate supplier
+        const supplier = await tx.supplier.findUnique({
+          where: { id: supplierId, status: 'ACTIVE' }
         });
-      }
+        if (!supplier) {
+          throw fastify.httpErrors.badRequest('Supplier not found or not currently active');
+        }
 
-      // 3. Calculate totals & build order items
-      let totalMaterialAmount = 0;
-      let maxDeliveryCharge = 0; // Or sum if individual, standard is fixed trip charge
-      const orderItemsData: any[] = [];
+        const serviceArea = await tx.supplierServiceArea.findFirst({ where: { supplierId, districtId, isActive: true, district: { isActive: true } } });
+        if (!serviceArea) throw fastify.httpErrors.badRequest('Supplier does not serve this active district');
 
-      for (const item of items) {
-        const sp = supplierProducts.find((p) => p.id === item.supplierProductId);
-        if (!sp) continue;
+        // 2. Fetch all supplier products and validate single-supplier constraint
+        const supplierProductIds = items.map((i) => i.supplierProductId);
+        const supplierProducts = await tx.supplierProduct.findMany({
+          where: {
+            id: { in: supplierProductIds },
+            supplierId
+          },
+          include: { masterProduct: true }
+        });
 
-        if (!sp.isAvailable || !sp.masterProduct.isActive || sp.stockQuantity < item.quantity) return reply.status(400).send({ error: 'Material is unavailable or has insufficient stock' });
-        if (item.quantity < sp.minOrderQty) {
-          return reply.status(400).send({
-            error: `Minimum order quantity for ${sp.masterProduct.name} is ${sp.minOrderQty} ${sp.unit}`
+        if (supplierProducts.length !== items.length) {
+          throw fastify.httpErrors.badRequest('All ordered items must belong to the selected supplier (1 cart = 1 supplier)');
+        }
+
+        // 3. Calculate totals & build order items
+        let totalMaterialAmount = 0;
+        let maxDeliveryCharge = 0; // Or sum if individual, standard is fixed trip charge
+        const orderItemsData: any[] = [];
+
+        for (const item of items) {
+          const sp = supplierProducts.find((p) => p.id === item.supplierProductId);
+          if (!sp) continue;
+
+          if (!sp.isAvailable || !sp.masterProduct.isActive || sp.stockQuantity < item.quantity) throw fastify.httpErrors.badRequest('Material is unavailable or has insufficient stock');
+          if (item.quantity < sp.minOrderQty) {
+            throw fastify.httpErrors.badRequest(`Minimum order quantity for ${sp.masterProduct.name} is ${sp.minOrderQty} ${sp.unit}`);
+          }
+
+          const itemTotal = money(sp.sellingPrice * item.quantity);
+          totalMaterialAmount += itemTotal;
+          if (sp.deliveryCharge > maxDeliveryCharge) {
+            maxDeliveryCharge = sp.deliveryCharge;
+          }
+
+          orderItemsData.push({
+            supplierProductId: sp.id,
+            masterProductName: sp.masterProduct.name,
+            unit: sp.unit,
+            quantity: item.quantity,
+            unitPrice: sp.sellingPrice,
+            totalPrice: itemTotal
           });
         }
 
-        const itemTotal = money(sp.sellingPrice * item.quantity);
-        totalMaterialAmount += itemTotal;
-        if (sp.deliveryCharge > maxDeliveryCharge) {
-          maxDeliveryCharge = sp.deliveryCharge;
-        }
+        const finalTotal = money(totalMaterialAmount + maxDeliveryCharge);
 
-        orderItemsData.push({
-          supplierProductId: sp.id,
-          masterProductName: sp.masterProduct.name,
-          unit: sp.unit,
-          quantity: item.quantity,
-          unitPrice: sp.sellingPrice,
-          totalPrice: itemTotal
-        });
-      }
+        // Generate collision-proof order number: KLK-<DISTRICT>-YYMMDD-<RANDOM>
+        const district = await tx.district.findUnique({ where: { id: districtId } });
+        const districtCode = district?.code.substring(0, 3) || 'DRB';
+        const datePrefix = new Date().toISOString().slice(2, 10).replace(/-/g, '');
+        const randSuffix = randomUUID();
+        const orderNumber = `KLK-${districtCode}-${datePrefix}-${randSuffix}`;
 
-      const finalTotal = money(totalMaterialAmount + maxDeliveryCharge);
-
-      // Generate collision-proof order number: KLK-<DISTRICT>-YYMMDD-<RANDOM>
-      const district = await fastify.prisma.district.findUnique({ where: { id: districtId } });
-      const districtCode = district?.code.substring(0, 3) || 'DRB';
-      const datePrefix = new Date().toISOString().slice(2, 10).replace(/-/g, '');
-      const randSuffix = randomUUID();
-      const orderNumber = `KLK-${districtCode}-${datePrefix}-${randSuffix}`;
-
-      // 4. Create Order in PENDING_APPROVAL state (Roadmap Section 11)
-      const order = await fastify.prisma.order.create({
-        data: {
-          orderNumber,
-          customerId,
-          supplierId,
-          districtId,
-          totalMaterialAmount,
-          deliveryCharge: maxDeliveryCharge,
-          finalTotal,
-          amountPaid: 0,
-          balancePending: finalTotal,
-          status: 'PENDING_APPROVAL',
-          paymentStatus: 'PENDING',
-          deliveryAddress,
-          landmark,
-          pincode,
-          deliveryInstructions,
-          siteContactPhone,
-          items: {
-            create: orderItemsData
+        // 4. Create Order in PENDING_APPROVAL state (Roadmap Section 11)
+        return tx.order.create({
+          data: {
+            orderNumber,
+            idempotencyKey,
+            requestHash,
+            customerId,
+            supplierId,
+            districtId,
+            totalMaterialAmount,
+            deliveryCharge: maxDeliveryCharge,
+            finalTotal,
+            amountPaid: 0,
+            balancePending: finalTotal,
+            status: 'PENDING_APPROVAL',
+            paymentStatus: 'PENDING',
+            deliveryAddress,
+            landmark,
+            pincode,
+            deliveryInstructions,
+            siteContactPhone,
+            items: {
+              create: orderItemsData
+            }
+          },
+          include: {
+            items: true,
+            supplier: true
           }
-        },
-        include: {
-          items: true,
-          supplier: true
-        }
+        });
       });
 
       return reply.status(201).send({

@@ -1,4 +1,4 @@
-import { LanguageProvider, useLanguage } from '@klink/ui';
+import { LanguageProvider, useLanguage, OrderStatus, SignInDialog, LanguageSwitch } from '@klink/ui';
 import '@klink/ui/styles.css';
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './lib/auth-context';
@@ -167,29 +167,27 @@ export function AppContent() {
 
       {/* Order Success Toast / Modal */}
       {successOrder && (
-        <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-xl max-w-sm w-full p-6 text-center space-y-4 shadow-xl border border-stone-200 animate-in zoom-in-95">
-            <div className="w-12 h-12 rounded-xl bg-stone-100 text-stone-900 border border-stone-200 flex items-center justify-center mx-auto shadow-xs">
-              <CheckCircle2 className="w-6 h-6 stroke-[2]" />
-            </div>
-            <div className="space-y-1">
-              <h3 className="font-semibold text-base text-stone-900">
-                {t('Order placed')} · <span className="font-mono">{successOrder.orderNumber}</span>
-              </h3>
-              <p className="text-xs text-stone-500 leading-relaxed">
-                {t('The supplier will confirm your order. Follow it under My orders.')}
-              </p>
-            </div>
-            <div className="pt-2">
-              <button
-                onClick={() => setSuccessOrder(null)}
-                className="w-full py-2.5 rounded-lg bg-stone-900 hover:bg-stone-800 text-white font-semibold text-xs shadow-xs transition-all cursor-pointer"
-              >
-                {t('Track order')}
-              </button>
-            </div>
+        <SignInDialog titleId="order-confirmation-title" onDismiss={() => setSuccessOrder(null)}>
+          <div className="space-y-3 text-stone-900">
+            <CheckCircle2 className="size-7 text-emerald-700" aria-hidden="true" />
+            <h2 id="order-confirmation-title" className="text-xl font-semibold">
+              {t('Order placed')} · {successOrder.orderNumber}
+            </h2>
+            <p className="text-sm font-semibold"><OrderStatus status={successOrder.status} /></p>
+            <p className="text-sm">
+              {t(successOrder.status === 'PENDING_APPROVAL' ? 'The supplier will confirm your order. Follow it under My orders.' : 'Track real-time tractor dispatch and site material drops')}
+            </p>
+            <p className="flex flex-wrap justify-between gap-2 border-y border-stone-200 py-3 font-semibold">
+              <span>{t('Amount due')}</span>
+              <span>₹{Number(successOrder.balancePending ?? successOrder.finalTotal).toLocaleString('en-IN')}</span>
+            </p>
+            <p className="text-sm">{t('No payment was collected at checkout.')}</p>
+            <LanguageSwitch />
+            <button type="button" className="klink-primary w-full" onClick={() => setSuccessOrder(null)}>
+              {t('Track order')}
+            </button>
           </div>
-        </div>
+        </SignInDialog>
       )}
     </div>
   );
