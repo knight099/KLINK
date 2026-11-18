@@ -1,3 +1,4 @@
+import { useLanguage } from '@klink/ui';
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { apiFetch } from './api';
 
@@ -33,6 +34,7 @@ interface CartContextType {
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { t } = useLanguage();
   const [supplierId, setSupplierId] = useState<string | null>(() => localStorage.getItem('klink_cart_supplier_id'));
   const [supplierName, setSupplierName] = useState<string | null>(() => localStorage.getItem('klink_cart_supplier_name'));
   const [items, setItems] = useState<CartItem[]>(() => {
@@ -61,7 +63,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Single supplier cart rule (Roadmap Section 9)
     if (supplierId && supplierId !== newSupplierId && items.length > 0) {
       const confirmSwitch = window.confirm(
-        `Your cart already has items from "${supplierName}".\n\nConstruction marketplace orders are fulfilled by 1 supplier per order.\n\nDo you want to clear your current cart and start a new order with "${newSupplierName}"?`
+        `${t('Clear your current cart and switch suppliers?')}\n\n${t('Current supplier')}: ${supplierName}\n${t('New supplier')}: ${newSupplierName}`
       );
       if (!confirmSwitch) return false;
 

@@ -1,5 +1,5 @@
 import { useLanguage, LanguageSwitch, FormError, type Message } from '@klink/ui';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useCart } from '../lib/cart-context';
 import { useDistrict } from '../lib/district-context';
 import { useAuth } from '../lib/auth-context';
@@ -74,6 +74,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
         }
       })
       .catch((err) => console.log('Could not load saved addresses:', err));
+  }, [isOpen]);
+
+  const drawer = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = drawer.current;
+    if (!dialog) return;
+    dialog.showModal();
+    return () => dialog.close();
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -161,7 +169,15 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-stone-950/60 backdrop-blur-xs flex justify-end animate-in fade-in duration-200">
+    <dialog
+      ref={drawer}
+      aria-labelledby="klink-cart-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      className="fixed inset-y-0 right-0 left-auto m-0 h-full max-h-none w-full max-w-lg overflow-hidden bg-transparent backdrop:bg-stone-950/60"
+    >
       <div className="w-full max-w-lg bg-[#FAF9F6] h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-200 border-l border-stone-200">
         {/* Drawer Header */}
         <div className="p-4 sm:p-5 border-b border-stone-800 flex flex-wrap items-center justify-between gap-2 bg-stone-900 text-white">
@@ -170,7 +186,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
               <Truck className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold tracking-tight text-stone-100">{t('Cart')}</h2>
+              <h2 id="klink-cart-title" className="text-sm font-semibold tracking-tight text-stone-100">{t('Cart')}</h2>
               {supplierName && (
                 <p className="text-xs text-stone-400 font-mono truncate max-w-[240px]">
                   {t('Supplier')}{': '}<span className="text-stone-200">{supplierName}</span>
@@ -537,6 +553,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
           </div>
         )}
       </div>
-    </div>
+    </dialog>
   );
 };
