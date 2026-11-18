@@ -36,10 +36,10 @@ export async function apiFetch<T>(
   // Only a confirmed response ends the attempt; an identical new receipt after
   // success gets a new key. Different signed-in sessions cannot share attempts.
   let attemptStorageKey: string | undefined;
-  const financialWrite = options.method === 'POST' &&
-    (endpoint.endsWith('/payments') || endpoint === '/supplier/ledger/settle' ||
+  const retriableWrite = options.method === 'POST' &&
+    (endpoint === '/customer/orders' || endpoint.endsWith('/payments') || endpoint === '/supplier/ledger/settle' ||
      endpoint === '/supplier/payments/manual' || endpoint === '/supplier/orders/manual');
-  if (financialWrite && !headers['Idempotency-Key']) {
+  if (retriableWrite && !headers['Idempotency-Key']) {
     const signature = new TextEncoder().encode(`${token || ''}:${endpoint}:${options.body || ''}`);
     const digest = await crypto.subtle.digest('SHA-256', signature);
     const hash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');

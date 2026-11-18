@@ -12,3 +12,7 @@ onlyBuiltDependencies:
 overrides:
   deepmerge-ts: ^8.0.0
   esbuild: ^0.28.2
+
+patchedDependencies:
+  picomatch@2.3.2: patches/picomatch@2.3.2.patch
+  picomatch@4.0.7: patches/picomatch@4.0.7.patch

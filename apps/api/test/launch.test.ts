@@ -110,6 +110,31 @@ test('manual pending orders do not reserve stock until accepted', async () => {
   assert.equal(res.statusCode, 201, res.body);
   assert.equal((await app.prisma.supplierProduct.findUniqueOrThrow({ where: { id: ids.product } })).stockQuantity, 10);
 });
+test('customer checkout safely replays a submitted order with the same key', async () => {
+  const key = randomUUID();
+  const payload = {
+    supplierId: ids.supplierProfile,
+    districtId: ids.district,
+    items: [{ supplierProductId: ids.product, quantity: 1 }],
+    deliveryAddress: 'Test delivery address',
+    siteContactPhone: '9123456789'
+  };
+  const submit = (body = payload) => app.inject({
+    method: 'POST',
+    url: '/api/v1/customer/orders',
+    headers: { authorization: `Bearer ${tokens.customer}`, 'idempotency-key': key },
+    payload: body
+  });
+  const [placed, replayed] = await Promise.all([submit(), submit()]);
+  assert.equal(placed.statusCode, 201, placed.body);
+  assert.equal(replayed.statusCode, 201, replayed.body);
+  const created = placed.json().order;
+  assert.equal(replayed.json().order.id, created.id);
+  assert.equal(created.amountPaid, 0);
+  assert.equal(created.balancePending, created.finalTotal);
+  assert.equal((await submit({ ...payload, deliveryAddress: 'Different delivery address' })).statusCode, 409);
+});
+
 test('customer cannot order unavailable material', async () => {
   await app.prisma.supplierProduct.update({ where: { id: ids.product }, data: { isAvailable: false } });
   const res = await call('POST', '/customer/orders', tokens.customer, { supplierId: ids.supplierProfile, districtId: ids.district, items: [{ supplierProductId: ids.product, quantity: 1 }], deliveryAddress: 'Test address', siteContactPhone: '9123456789' });

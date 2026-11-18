@@ -144,9 +144,11 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const totalMaterialAmount = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+  const toCents = (amount: number) => Math.round((amount + Number.EPSILON) * 100);
+  const materialsInCents = items.reduce((sum, item) => sum + toCents(item.unitPrice * item.quantity), 0);
+  const totalMaterialAmount = materialsInCents / 100;
   const deliveryCharge = items.reduce((max, item) => Math.max(max, item.deliveryCharge), 0);
-  const finalTotal = totalMaterialAmount + deliveryCharge;
+  const finalTotal = (materialsInCents + toCents(deliveryCharge)) / 100;
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
 
   return (

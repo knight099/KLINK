@@ -10,7 +10,6 @@ import {
   Plus,
   Minus,
   ArrowRight,
-  ShieldCheck,
   MapPin,
   Phone,
   Truck,
@@ -42,30 +41,64 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
     finalTotal
   } = useCart();
   const { activeDistrict } = useDistrict();
-  const { user, setIsAuthModalOpen } = useAuth();
+  const { user, setIsAuthModalOpen, setAuthModalMode } = useAuth();
 
   const [addressLine, setAddressLine] = useState('');
   const [landmark, setLandmark] = useState('');
   const [pincode, setPincode] = useState('846001');
-  const [sitePhone, setSitePhone] = useState(user?.phone || '');
-  const [instructions, setInstructions] = useState('Call 30 mins before arrival. Site entrance is wide for tractor/truck.');
+  const [sitePhone, setSitePhone] = useState<string | null>(null);
+  const [instructions, setInstructions] = useState('');
   const [paymentChoice, setPaymentChoice] = useState<'COD' | 'UPI' | 'UDHAAR'>('COD');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitting = useRef(false);
+  const [step, setStep] = useState<'cart' | 'delivery' | 'review'>('cart');
+  const stepHeading = useRef<HTMLHeadingElement>(null);
+  const addressEdited = useRef(false);
+  const contactPhone = sitePhone ?? user?.phone ?? '';
+  const currentStep = items.length ? step : 'cart';
   const [error, setError] = useState<{ message?: string; status?: number; fallback: Message } | null>(null);
   const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [saveThisAddress, setSaveThisAddress] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
 
-  // Load Customer's saved construction site addresses & sync fresh cart prices
+  const previousUserId = useRef(user?.id);
+  const currentUserId = useRef(user?.id);
+  currentUserId.current = user?.id;
+
+  useEffect(() => {
+    if (previousUserId.current && previousUserId.current !== user?.id) {
+      setSavedAddresses([]);
+      setSelectedAddressId(null);
+      setAddressLine('');
+      setLandmark('');
+      setPincode('846001');
+      setSitePhone(null);
+      setInstructions('');
+      setSaveThisAddress(false);
+      setPaymentChoice('COD');
+      setStep('cart');
+      setError(null);
+      addressEdited.current = false;
+    }
+    previousUserId.current = user?.id;
+  }, [user?.id]);
+
+  // Refresh the existing cart's supplier prices when the drawer opens.
   useEffect(() => {
     if (!isOpen) return;
-    refreshCartPrices();
+    void refreshCartPrices();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !user) return;
+    let active = true;
     apiFetch<{ addresses: any[] }>('/customer/addresses')
       .then((res) => {
+        if (!active) return;
         const list = res.addresses || [];
         setSavedAddresses(list);
-        if (list.length > 0 && !addressLine) {
+        if (list.length > 0 && !addressEdited.current && !addressLine) {
           const def = list.find((a) => a.isDefault) || list[0];
           setSelectedAddressId(def.id);
           setAddressLine(def.addressLine);
@@ -74,7 +107,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
         }
       })
       .catch((err) => console.log('Could not load saved addresses:', err));
-  }, [isOpen]);
+    return () => { active = false; };
+  }, [isOpen, user?.id]);
 
   const drawer = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -84,61 +118,79 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
     return () => dialog.close();
   }, [isOpen]);
 
+  useEffect(() => {
+    if (isOpen) stepHeading.current?.focus();
+  }, [isOpen, currentStep]);
+
+  useEffect(() => {
+    if (items.length === 0) setStep('cart');
+  }, [items.length]);
+
   if (!isOpen) return null;
 
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser');
+      setError({ fallback: 'GPS is unavailable on this device.' });
       return;
     }
+    setError(null);
     setIsLocating(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setIsLocating(false);
+        addressEdited.current = true;
         const coords = `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
         setLandmark((prev) => (prev ? `${prev} (GPS: ${coords})` : `GPS Plot Location: ${coords}`));
       },
       () => {
         setIsLocating(false);
-        alert('Could not access GPS location. Please ensure location permissions are allowed.');
+        setError({ fallback: 'Location could not be found. Check your location permissions.' });
       },
       { timeout: 8000 }
     );
   };
 
-  const handleCheckout = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const moveTo = (next: typeof step) => {
+    setError(null);
+    setStep(next);
+  };
+
+  const validateDelivery = () => {
+    if (!activeDistrict) return 'Please select a district';
+    if (addressLine.trim().length < 5) return 'Enter a delivery address with at least 5 characters.';
+    if (!/^\d{6}$/.test(pincode.trim())) return 'Enter a 6-digit PIN code.';
+    if (!/^\d{10}$/.test(contactPhone.trim())) return 'Enter a 10-digit contact number.';
+    return null;
+  };
+
+  const handleNext = async () => {
+    if (submitting.current || !supplierId || items.length === 0) return;
+    if (currentStep === 'cart') {
+      moveTo('delivery');
+      return;
+    }
+    const validation = validateDelivery();
+    if (validation) {
+      setStep('delivery');
+      setError({ fallback: validation });
+      return;
+    }
+    if (currentStep === 'delivery') {
+      moveTo('review');
+      return;
+    }
     if (!user) {
+      setAuthModalMode('LOGIN');
       setIsAuthModalOpen(true);
       return;
     }
-    if (!supplierId || items.length === 0) return;
-    if (!activeDistrict) {
-      setError({ fallback: 'Please select a district' });
-      return;
-    }
-    if (!addressLine.trim()) {
-      setError({ fallback: 'Please enter a delivery site address' });
-      return;
-    }
+    if (!activeDistrict) return;
 
+    submitting.current = true;
     setIsSubmitting(true);
     setError(null);
 
     try {
-      // If customer requested saving this address
-      if (saveThisAddress && addressLine) {
-        apiFetch('/customer/addresses', {
-          method: 'POST',
-          body: JSON.stringify({
-            addressLine,
-            landmark,
-            pincode,
-            districtId: activeDistrict.id
-          })
-        }).catch((e) => console.error('Failed to save address background:', e));
-      }
-
       const payload = {
         supplierId,
         districtId: activeDistrict.id,
@@ -146,11 +198,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
           supplierProductId: i.supplierProductId,
           quantity: i.quantity
         })),
-        deliveryAddress: addressLine,
+        deliveryAddress: addressLine.trim(),
         landmark,
-        pincode: pincode.trim() || '846001',
+        pincode: pincode.trim(),
         deliveryInstructions: `${instructions} [Preferred Payment: ${paymentChoice}]`,
-        siteContactPhone: sitePhone || user?.phone || '9123456789'
+        siteContactPhone: contactPhone.trim()
       };
 
       const res = await apiFetch<{ order: any }>('/customer/orders', {
@@ -158,12 +210,29 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
         body: JSON.stringify(payload)
       });
 
+      if (saveThisAddress && currentUserId.current === user.id) {
+        void apiFetch('/customer/addresses', {
+          method: 'POST',
+          body: JSON.stringify({
+            addressLine: payload.deliveryAddress,
+            landmark,
+            pincode: payload.pincode,
+            districtId: payload.districtId
+          })
+        }).catch((error) => console.error('Could not save delivery address:', error));
+      }
+
       clearCart();
-      onClose();
+      setStep('cart');
       onOrderSuccess(res.order);
     } catch (err: any) {
-      setError({ message: err.message, status: err?.status, fallback: 'Failed to place order' });
+      if (!err?.status || err.status >= 500) {
+        setError({ fallback: 'Order response was interrupted. Retry the same order to confirm.' });
+      } else {
+        setError({ message: err.message, status: err.status, fallback: 'Failed to place order' });
+      }
     } finally {
+      submitting.current = false;
       setIsSubmitting(false);
     }
   };
@@ -174,7 +243,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
       aria-labelledby="klink-cart-title"
       onCancel={(event) => {
         event.preventDefault();
-        onClose();
+        if (!submitting.current) onClose();
       }}
       className="fixed inset-y-0 right-0 left-auto m-0 h-full max-h-none w-full max-w-lg overflow-hidden bg-transparent backdrop:bg-stone-950/60"
     >
@@ -197,6 +266,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
           <LanguageSwitch />
           <button
             aria-label={t('Close')}
+            disabled={isSubmitting}
             onClick={onClose}
             className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer"
           >
@@ -204,8 +274,23 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
           </button>
         </div>
 
+                {items.length > 0 && (
+          <ol className="grid grid-cols-3 gap-2 border-b border-stone-200 bg-white px-4 py-3 text-center text-sm text-stone-700">
+            {(['cart', 'delivery', 'review'] as const).map((part, index) => (
+              <li key={part} aria-current={currentStep === part ? 'step' : undefined} className={currentStep === part ? 'font-bold text-stone-950' : undefined}>
+                {index + 1}. {t(part === 'cart' ? 'Cart' : part === 'delivery' ? 'Delivery details' : 'Review')}
+              </li>
+            ))}
+          </ol>
+        )}
+
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
+          {items.length > 0 && (
+            <h3 ref={stepHeading} tabIndex={-1} className="text-lg font-semibold text-stone-900">
+              {t(currentStep === 'cart' ? 'Bill of Materials' : currentStep === 'delivery' ? 'Delivery details' : 'Review')}
+            </h3>
+          )}
           {error && (
             <FormError failure={error} />
           )}
@@ -222,15 +307,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
             </div>
           ) : (
             <>
-              {/* Single Supplier Rule Banner */}
-              <div className="p-3 rounded-xl bg-stone-100 border border-stone-200 flex items-center space-x-2.5 text-xs text-stone-700">
-                <ShieldCheck className="w-4 h-4 text-stone-600 shrink-0" />
-                <span>Single-Yard Dispatch: All materials in this order will ship from <strong>{supplierName}</strong>.</span>
-              </div>
-
-              {/* Items List */}
-              <div className="space-y-2.5">
-                <div className="text-[11px] font-mono uppercase tracking-wider text-stone-400">{t('Bill of Materials')}</div>
+              {currentStep === 'cart' && (
+                <div className="space-y-3">
+                  <p className="text-sm text-stone-700">{t('Supplier')}: <strong>{supplierName}</strong></p>
                 {items.map((item) => (
                   <div
                     key={item.supplierProductId}
@@ -252,30 +331,32 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                         <div className="flex items-center border border-stone-200 rounded-lg bg-stone-50 p-0.5 shadow-2xs">
                           <button
                             type="button"
-                            onClick={() => updateQuantity(item.supplierProductId, item.quantity - 1)}
+                            onClick={() => updateQuantity(item.supplierProductId, Math.max(0, item.quantity - 1))}
                             className="p-1 hover:bg-white rounded text-stone-600 hover:text-stone-900 cursor-pointer transition-colors"
-                            title="Decrease 1"
+                            aria-label={t('Decrease quantity')}
                           >
                             <Minus className="w-3.5 h-3.5" />
                           </button>
                           <input
                             type="number"
-                            min="1"
+                            min="0"
+                            step="any"
+                            max={1_000_000_000}
                             value={item.quantity}
                             onChange={(e) => {
-                              const val = parseInt(e.target.value);
-                              if (!isNaN(val) && val >= 0) {
+                              const val = e.target.valueAsNumber;
+                              if (Number.isFinite(val) && val > 0 && val <= 1_000_000_000) {
                                 updateQuantity(item.supplierProductId, val);
                               }
                             }}
                             className="w-14 text-center text-xs font-mono font-bold text-stone-900 bg-white border border-stone-200 rounded py-0.5 px-1 focus:ring-1 focus:ring-stone-800 focus:outline-none"
-                            title="Directly edit amount / quantity"
+                            aria-label={`${t('Quantity')}: ${item.masterProductName}`}
                           />
                           <button
                             type="button"
-                            onClick={() => updateQuantity(item.supplierProductId, item.quantity + 1)}
+                            onClick={() => updateQuantity(item.supplierProductId, Math.min(1_000_000_000, item.quantity + 1))}
                             className="p-1 hover:bg-white rounded text-stone-600 hover:text-stone-900 cursor-pointer transition-colors"
-                            title="Increase 1"
+                            aria-label={t('Increase quantity')}
                           >
                             <Plus className="w-3.5 h-3.5" />
                           </button>
@@ -285,36 +366,28 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                           type="button"
                           onClick={() => removeItem(item.supplierProductId)}
                           className="p-1 text-stone-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
-                          title="Remove item"
+                          aria-label={t('Remove item')}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
 
-                      {/* Quick Add Increment Badges */}
-                      <div className="flex items-center space-x-1">
-                        <span className="text-[9px] text-stone-400 font-mono uppercase">Quick:</span>
-                        {[10, 50, 100].map((addQty) => (
-                          <button
-                            key={addQty}
-                            type="button"
-                            onClick={() => updateQuantity(item.supplierProductId, item.quantity + addQty)}
-                            className="px-1.5 py-0.5 rounded bg-stone-100 hover:bg-stone-200 text-[10px] font-mono text-stone-700 transition-colors cursor-pointer"
-                          >
-                            +{addQty}
-                          </button>
-                        ))}
-                      </div>
                     </div>
                   </div>
                 ))}
               </div>
 
+              )}
+
+              {currentStep === 'delivery' && (
+                <>
               {/* Preferred Payment Terms Selector */}
               <div className="space-y-2.5 pt-2 border-t border-stone-200">
                 <div className="text-[11px] font-mono uppercase tracking-wider text-stone-400">{t('Payment Terms')}</div>
                 <div className="grid grid-cols-3 gap-2 text-xs">
-                  <div
+                  <button
+                    type="button"
+                    aria-pressed={paymentChoice === 'COD'}
                     onClick={() => setPaymentChoice('COD')}
                     className={`p-3 rounded-xl border cursor-pointer text-center transition-all ${
                       paymentChoice === 'COD'
@@ -324,9 +397,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                   >
                     <IndianRupee className={`w-4 h-4 mx-auto mb-1 ${paymentChoice === 'COD' ? 'text-amber-400' : 'text-stone-500'}`} />
                     <span className="block text-xs font-semibold">{t('Cash on Dump')}</span>
-                  </div>
+                  </button>
 
-                  <div
+                  <button
+                    type="button"
+                    aria-pressed={paymentChoice === 'UPI'}
                     onClick={() => setPaymentChoice('UPI')}
                     className={`p-3 rounded-xl border cursor-pointer text-center transition-all ${
                       paymentChoice === 'UPI'
@@ -336,9 +411,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                   >
                     <QrCode className={`w-4 h-4 mx-auto mb-1 ${paymentChoice === 'UPI' ? 'text-blue-400' : 'text-stone-500'}`} />
                     <span className="block text-xs font-semibold">{t('UPI on Site')}</span>
-                  </div>
+                  </button>
 
-                  <div
+                  <button
+                    type="button"
+                    aria-pressed={paymentChoice === 'UDHAAR'}
                     onClick={() => setPaymentChoice('UDHAAR')}
                     className={`p-3 rounded-xl border cursor-pointer text-center transition-all ${
                       paymentChoice === 'UDHAAR'
@@ -348,13 +425,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                   >
                     <CreditCard className={`w-4 h-4 mx-auto mb-1 ${paymentChoice === 'UDHAAR' ? 'text-emerald-400' : 'text-stone-500'}`} />
                     <span className="block text-xs font-semibold">{t('Yard Udhaar')}</span>
-                  </div>
+                  </button>
                 </div>
 
-                <p className="text-xs text-stone-500">
-                  {t('This is your payment preference. No payment is collected at checkout.')}
-                  {t('The full order amount remains due until the yard records a received payment.')}
-                </p>
               </div>
 
               {/* Delivery Site Details Form */}
@@ -362,7 +435,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                 <div className="flex items-center justify-between">
                   <div className="text-[11px] font-mono uppercase tracking-wider text-stone-400 flex items-center space-x-1.5">
                     <MapPin className="w-3.5 h-3.5 text-stone-600" />
-                    <span>Site Destination ({activeDistrict?.name || 'Darbhanga'})</span>
+                    <span>{t('Delivery District')} · {activeDistrict?.name}</span>
                   </div>
                   <button
                     type="button"
@@ -370,7 +443,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                     disabled={isLocating}
                     className="text-[11px] font-mono text-stone-700 hover:text-stone-900 flex items-center space-x-1 cursor-pointer"
                   >
-                    <span>{isLocating ? 'Locating...' : '📍 GPS Auto-Pin'}</span>
+                    <span>{isLocating ? t('Finding location…') : t('Use current location')}</span>
                   </button>
                 </div>
 
@@ -386,6 +459,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                             key={addr.id}
                             type="button"
                             onClick={() => {
+                              addressEdited.current = true;
                               setSelectedAddressId(addr.id);
                               setAddressLine(addr.addressLine);
                               setLandmark(addr.landmark || '');
@@ -404,6 +478,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                       <button
                         type="button"
                         onClick={() => {
+                          addressEdited.current = true;
                           setSelectedAddressId(null);
                           setAddressLine('');
                           setLandmark('');
@@ -415,7 +490,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                             : 'border-stone-300 text-stone-600 hover:bg-stone-50'
                         }`}
                       >
-                        + New Site
+                        {t('New address')}
                       </button>
                     </div>
                   </div>
@@ -430,11 +505,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                     id="klink-cart-addressLine"
                     value={addressLine}
                     onChange={(e) => {
+                      addressEdited.current = true;
                       setAddressLine(e.target.value);
                       setSelectedAddressId(null);
                     }}
                     required
-                    className="w-full px-3.5 py-2 text-xs font-normal bg-white border border-stone-200 rounded-xl focus:border-stone-800 focus:outline-none"
+                    className="klink-field w-full px-3.5 py-2 text-xs font-normal bg-white border border-stone-200 rounded-xl focus:border-stone-800 focus:outline-none"
                     placeholder="e.g. Near Shiv Mandir, Ward 12, Bahadurpur, Darbhanga"
                   />
                 </div>
@@ -447,9 +523,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                       maxLength={6}
                       id="klink-cart-pincode"
                     value={pincode}
-                      onChange={(e) => setPincode(e.target.value)}
+                      onChange={(event) => {
+                        addressEdited.current = true;
+                        setPincode(event.target.value);
+                      }}
                       required
-                      className="w-full px-3 py-2 text-xs font-mono bg-white border border-stone-200 rounded-xl focus:border-stone-800 focus:outline-none"
+                      className="klink-field w-full px-3 py-2 text-xs font-mono bg-white border border-stone-200 rounded-xl focus:border-stone-800 focus:outline-none"
                       placeholder="846001"
                     />
                   </div>
@@ -459,8 +538,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                       type="text"
                       id="klink-cart-landmark"
                     value={landmark}
-                      onChange={(e) => setLandmark(e.target.value)}
-                      className="w-full px-3.5 py-2 text-xs bg-white border border-stone-200 rounded-xl focus:border-stone-800 focus:outline-none"
+                      onChange={(event) => {
+                        addressEdited.current = true;
+                        setLandmark(event.target.value);
+                      }}
+                      className="klink-field w-full px-3.5 py-2 text-xs bg-white border border-stone-200 rounded-xl focus:border-stone-800 focus:outline-none"
                       placeholder="e.g. Behind Saraswati Mandir"
                     />
                   </div>
@@ -471,10 +553,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                   <input
                     type="tel"
                     id="klink-cart-sitePhone"
-                    value={sitePhone}
-                    onChange={(e) => setSitePhone(e.target.value)}
+                    value={contactPhone}
+                    onChange={(e) => setSitePhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
                     required
-                    className="w-full px-3.5 py-2 text-xs font-mono bg-white border border-stone-200 rounded-xl focus:border-stone-800 focus:outline-none"
+                    className="klink-field w-full px-3.5 py-2 text-xs font-mono bg-white border border-stone-200 rounded-xl focus:border-stone-800 focus:outline-none"
                     placeholder="10-digit mobile"
                   />
                 </div>
@@ -501,11 +583,36 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                     id="klink-cart-instructions"
                     value={instructions}
                     onChange={(e) => setInstructions(e.target.value)}
-                    className="w-full px-3.5 py-2 text-xs bg-white border border-stone-200 rounded-xl focus:border-stone-800 focus:outline-none"
+                    className="klink-field w-full px-3.5 py-2 text-xs bg-white border border-stone-200 rounded-xl focus:border-stone-800 focus:outline-none"
                     placeholder="e.g. Call before delivery, unload near north gate"
                   />
                 </div>
               </div>
+
+                </>
+              )}
+
+              {currentStep === 'review' && (
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-stone-200 bg-white p-4 text-sm">
+                    <h4 className="font-semibold">{t('Cart')}</h4>
+                    <ul className="mt-2 space-y-1">
+                      {items.map((item) => <li key={item.supplierProductId}>{item.masterProductName} × {item.quantity} {item.unit}</li>)}
+                    </ul>
+                    <button type="button" className="min-h-11 underline" disabled={isSubmitting} onClick={() => moveTo('cart')}>{t('Edit cart')}</button>
+                  </div>
+                  <div className="rounded-xl border border-stone-200 bg-white p-4 text-sm">
+                    <h4 className="font-semibold">{t('Delivery details')}</h4>
+                    <p className="mt-2 break-words">{addressLine}</p>
+                    <p>{activeDistrict?.name} · {pincode}</p>
+                    {landmark && <p className="break-words">{landmark}</p>}
+                    <p>{t('Contact number')}: {contactPhone}</p>
+                    <p>{t('Payment Terms')}: {t(paymentChoice === 'COD' ? 'Cash on Dump' : paymentChoice === 'UPI' ? 'UPI on Site' : 'Yard Udhaar')}</p>
+                    {instructions && <p className="break-words">{instructions}</p>}
+                    <button type="button" className="min-h-11 underline" disabled={isSubmitting} onClick={() => moveTo('delivery')}>{t('Edit delivery details')}</button>
+                  </div>
+                </div>
+              )}
 
               {/* Price Breakdown */}
               <div className="p-4 rounded-xl bg-white border border-stone-200 space-y-2 text-xs">
@@ -518,16 +625,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                 <div className="flex justify-between text-stone-600">
                   <span>{t('Tractor / Truck Carriage')}</span>
                   <span className="font-mono font-medium text-stone-900 tabular-nums">
-                    {deliveryCharge > 0 ? `₹${deliveryCharge.toLocaleString('en-IN')}` : 'Included'}
+                    ₹{deliveryCharge.toLocaleString('en-IN')}
                   </span>
                 </div>
                 <div className="border-t border-dashed border-stone-200 pt-2 flex justify-between text-sm font-semibold text-stone-900">
-                  <span>{t('Total Landed Amount')}</span>
+                  <span>{t('Amount due')}</span>
                   <span className="font-mono font-bold text-stone-900 text-base tabular-nums">₹{finalTotal.toLocaleString('en-IN')}</span>
                 </div>
-                <div className="text-[11px] text-stone-400 pt-1">
-                  * Final landed bill verified against electronic delivery challan upon unloading.
-                </div>
+                <p className="pt-1 text-stone-700">{t('This is your payment preference. No payment is collected at checkout.')} {t('The full order amount remains due until the yard records a received payment.')}</p>
               </div>
             </>
           )}
@@ -536,16 +641,20 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
         {/* Drawer Footer */}
         {items.length > 0 && (
           <div className="p-4 sm:p-5 border-t border-stone-200 bg-white">
+            {currentStep === 'delivery' && (
+              <button type="button" className="mb-2 min-h-11 text-sm underline" onClick={() => moveTo('cart')}>{t('Back to cart')}</button>
+            )}
             <button
-              onClick={handleCheckout}
+              type="button"
+              onClick={handleNext}
               disabled={isSubmitting}
               className="klink-primary w-full flex items-center justify-center gap-2"
             >
               <span>
-                {!user
-                  ? t('Sign in to place your order')
-                  : isSubmitting
-                  ? t('Placing order…')
+                {currentStep === 'cart' ? t('Continue to delivery')
+                  : currentStep === 'delivery' ? t('Continue to review')
+                  : !user ? t('Sign in to place your order')
+                  : isSubmitting ? t('Placing order…')
                   : `${t('Place order')} (₹${finalTotal.toLocaleString('en-IN')})`}
               </span>
               <ArrowRight className="w-4 h-4 stroke-[2]" />
