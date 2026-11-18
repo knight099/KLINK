@@ -265,7 +265,7 @@ export const hindi = {
   'Mark delivered': 'डिलीवरी पूरी करें',
   'Record receipt': 'भुगतान दर्ज करें',
   'Payment history': 'भुगतान का इतिहास',
-  'No receipts recorded': 'अभी कोई भुगतान दर्ज नहीं है',
+  'No receipts linked to this order': 'इस ऑर्डर से कोई भुगतान रसीद नहीं जुड़ी है',
   'All orders': 'सभी ऑर्डर',
   'Search orders': 'ऑर्डर खोजें',
   'No matching orders': 'मेल खाने वाला कोई ऑर्डर नहीं',

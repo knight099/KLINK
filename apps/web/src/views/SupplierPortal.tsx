@@ -1,4 +1,4 @@
-import { useLanguage, FormNotice, FormError, OrderStatus, PaymentStatus, signInFailure, type FormFailure } from '@klink/ui';
+import { useLanguage, FormNotice, FormError, OrderStatus, PaymentStatus, SignInDialog, signInFailure, type FormFailure } from '@klink/ui';
 import React, { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
@@ -59,6 +59,13 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
   const [deliveriesData, setDeliveriesData] = useState<any>(null);
   const [customers, setCustomers] = useState<any[]>([]);
   const [focusedOrderId, setFocusedOrderId] = useState<string | null>(null);
+  const orderHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (subTab !== 'orders') setFocusedOrderId(null);
+  }, [subTab]);
+  useEffect(() => {
+    if (focusedOrderId && subTab === 'orders') orderHeading.current?.focus();
+  }, [focusedOrderId, subTab]);
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [deliveryFilter, setDeliveryFilter] = useState<'ALL' | 'READY' | 'ON_ROAD' | 'DELIVERED'>('ALL');
   const [isLoading, setIsLoading] = useState(false);
@@ -1473,6 +1480,9 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                           <button
                             onClick={() => {
                               setDispatchOrder(ord);
+                              setDispatchDriverName('');
+                              setDispatchDriverPhone('');
+                              setDispatchVehicleNo('');
                               setDispatchChallanNo(`CHAL-${Date.now().toString().slice(-6)}`);
                               setDispatchInstructions(ord.deliveryInstructions || '');
                             }}
@@ -1563,6 +1573,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                           <button
                             onClick={() => {
                               setCompleteOrder(ord);
+                              setDeliveryNotes('');
                               setReceivedByName(custName);
                             }}
                             className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center space-x-1.5 shadow-sm"
@@ -1636,7 +1647,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
         <div className="space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">{t(focusedOrderId ? 'Order details' : 'Orders')}</h2>
+              <h2 ref={orderHeading} tabIndex={-1} className="text-lg font-semibold text-slate-900">{t(focusedOrderId ? 'Order details' : 'Orders')}</h2>
               {focusedOrderId && (
                 <button type="button" className="min-h-11 text-sm underline" onClick={() => setFocusedOrderId(null)}>{t('Back to orders')}</button>
               )}
@@ -1656,6 +1667,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                 {['ALL', 'PENDING_APPROVAL', 'CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'COMPLETED', 'CANCELLED', 'REJECTED'].map((st) => (
                   <button
                     key={st}
+                    aria-pressed={selectedStatus === st}
                     onClick={() => setSelectedStatus(st)}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                       selectedStatus === st ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
@@ -1782,7 +1794,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                               </li>
                             ))}
                           </ul>
-                        ) : <p className="text-sm text-stone-700">{t('No receipts recorded')}</p>}
+                        ) : <p className="text-sm text-stone-700">{t('No receipts linked to this order')}</p>}
                       </section>
                     )}
 
@@ -1808,6 +1820,9 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                         <button
                           onClick={() => {
                             setDispatchOrder(order);
+                            setDispatchDriverName('');
+                            setDispatchDriverPhone('');
+                            setDispatchVehicleNo('');
                             setDispatchChallanNo(`CHAL-${Date.now().toString().slice(-6)}`);
                             setDispatchInstructions(order.deliveryInstructions || '');
                           }}
@@ -1830,6 +1845,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                           <button
                             onClick={() => {
                               setCompleteOrder(order);
+                              setDeliveryNotes('');
                               setReceivedByName(custName);
                             }}
                             className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 shadow-xs flex items-center space-x-1.5"
@@ -1856,6 +1872,9 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                             setPaymentCustomerId(order.customerId);
                             setPaymentOrderId(order.id);
                             setPaymentAmount(0);
+                            setPaymentMode('CASH');
+                            setPaymentRefNo('');
+                            setPaymentNotes('');
                             setIsPaymentModalOpen(true);
                           }}
                           className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 shadow-xs flex items-center space-x-1"
@@ -2792,15 +2811,15 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
 
       {/* 2. MANUAL PAYMENT MODAL */}
       {isPaymentModalOpen && (
-        <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs overflow-y-auto flex items-start justify-center p-4">
-          <div className="my-auto bg-white rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl border border-stone-200 animate-in zoom-in-95 duration-150">
+        <SignInDialog titleId="supplier-payment-title" onDismiss={() => setIsPaymentModalOpen(false)}>
+          <div className="space-y-4">
             <div className="flex justify-between items-center border-b border-stone-200 pb-3">
               <div className="flex items-center space-x-2.5">
                 <div className="p-2 rounded-lg bg-stone-100 text-stone-900 border border-stone-200">
                   <IndianRupee className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-sm text-stone-900">{t('Record receipt')}</h3>
+                  <h3 id="supplier-payment-title" className="font-semibold text-sm text-stone-900">{t('Record receipt')}</h3>
                   <p className="text-xs text-stone-500">Record cash, UPI, bank transfer, or settle Udhaar credit</p>
                 </div>
               </div>
@@ -3012,20 +3031,20 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
               </div>
             </form>
           </div>
-        </div>
+        </SignInDialog>
       )}
 
       {/* 3. ASSIGN VEHICLE & DISPATCH MODAL */}
       {dispatchOrder && (
-        <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs overflow-y-auto flex items-start justify-center p-4">
-          <div className="my-auto bg-white rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl border border-stone-200 animate-in zoom-in-95 duration-150">
+        <SignInDialog titleId="supplier-dispatch-title" onDismiss={() => setDispatchOrder(null)}>
+          <div className="space-y-4">
             <div className="flex justify-between items-center border-b border-stone-200 pb-3">
               <div className="flex items-center space-x-2.5">
                 <div className="p-2 rounded-lg bg-stone-100 text-stone-900 border border-stone-200">
                   <Truck className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-sm text-stone-900">{t('Dispatch')}</h3>
+                  <h3 id="supplier-dispatch-title" className="font-semibold text-sm text-stone-900">{t('Dispatch')}</h3>
                   <p className="text-xs font-mono text-stone-500">{dispatchOrder.orderNumber}</p>
                 </div>
               </div>
@@ -3157,15 +3176,15 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
               </div>
             </form>
           </div>
-        </div>
+        </SignInDialog>
       )}
 
       {/* 4. CONFIRM DELIVERED MODAL */}
       {completeOrder && (
-        <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs overflow-y-auto flex items-start justify-center p-4">
-          <div className="my-auto bg-white rounded-xl max-w-sm w-full p-5 space-y-4 shadow-xl border border-stone-200 animate-in zoom-in-95 duration-150">
+        <SignInDialog titleId="supplier-delivery-title" onDismiss={() => setCompleteOrder(null)}>
+          <div className="space-y-4">
             <div className="flex justify-between items-center border-b border-stone-200 pb-2">
-              <h3 className="font-semibold text-sm text-stone-900">{t('Confirm delivery')}</h3>
+              <h3 id="supplier-delivery-title" className="font-semibold text-sm text-stone-900">{t('Confirm delivery')}</h3>
               <button onClick={() => setCompleteOrder(null)} className="text-stone-400 hover:text-stone-700">
                 <X className="w-5 h-5" />
               </button>
@@ -3220,7 +3239,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
               </div>
             </form>
           </div>
-        </div>
+        </SignInDialog>
       )}
 
       {/* 5. PRINT / VIEW DELIVERY CHALLAN MODAL */}
@@ -3613,15 +3632,15 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
 
       {/* 9. ADD / EDIT VEHICLE MODAL */}
       {isVehicleModalOpen && (
-        <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-xl max-w-md w-full shadow-xl overflow-hidden animate-in zoom-in-95 duration-150 border border-stone-200">
+        <SignInDialog titleId="supplier-vehicle-title" onDismiss={() => setIsVehicleModalOpen(false)}>
+          <div className="space-y-4">
             <div className="px-6 py-4 border-b border-stone-200 flex items-center justify-between bg-stone-50">
               <div className="flex items-center space-x-2.5">
                 <div className="p-2 rounded-lg bg-stone-100 text-stone-900 border border-stone-200">
                   <Truck className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-sm text-stone-900">
+                  <h3 id="supplier-vehicle-title" className="font-semibold text-sm text-stone-900">
                     {editingVehicle ? 'Edit Vehicle Details' : 'Add Vehicle to Yard Fleet'}
                   </h3>
                   <p className="text-xs text-stone-500">
@@ -3743,7 +3762,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
               </div>
             </form>
           </div>
-        </div>
+        </SignInDialog>
       )}
     </div>
   );
