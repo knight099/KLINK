@@ -241,3 +241,63 @@ test('reconciliation creates missing ledgers for accepted orders and receipts', 
   assert.ok(await app.prisma.customerLedger.findUnique({where:{supplierId_customerId:{supplierId:ids.supplierProfile,customerId:ids.customerProfile}}}));
   assert.equal((await reconcileLedgers(app.prisma, 'Repeat', true)).length, 0);
 });
+
+test('a yard-managed order keeps the reviewed quote and requires buyer approval for a changed window', async () => {
+  await app.prisma.supplierProduct.update({
+    where: { id: ids.product },
+    data: { stockQuantity: 10, sellingPrice: 100, isAvailable: true }
+  });
+  const settings = await call('PUT', '/supplier/delivery-settings', tokens.supplier, {
+    deliveryPincodes: ['846001'], deliveryMinHours: 2, deliveryMaxHours: 4
+  });
+  assert.equal(settings.statusCode, 200, settings.body);
+
+  const cart = { supplierId: ids.supplierProfile, districtId: ids.district, items: [
+    { supplierProductId: ids.product, quantity: 2 }
+  ], pincode: '846001' };
+  const orderInput = { ...cart, deliveryAddress: 'Test address', siteContactPhone: '9123456789' };
+  assert.equal((await call('POST', '/marketplace/delivery-quote', undefined, { ...cart, pincode: '846002' })).statusCode, 400);
+  assert.equal((await call('POST', '/customer/orders', tokens.customer, orderInput)).statusCode, 409);
+  const firstQuote = await call('POST', '/marketplace/delivery-quote', undefined, cart);
+  assert.equal(firstQuote.statusCode, 200, firstQuote.body);
+  await app.prisma.supplierProduct.update({ where: { id: ids.product }, data: { sellingPrice: 120 } });
+  assert.equal((await call('POST', '/customer/orders', tokens.customer, { ...orderInput, quoteToken: firstQuote.json().token })).statusCode, 409);
+
+  const quote = (await call('POST', '/marketplace/delivery-quote', undefined, cart)).json();
+  const key = randomUUID();
+  const submit = (quoteToken: string) => app.inject({
+    method: 'POST', url: '/api/v1/customer/orders',
+    headers: { authorization: `Bearer ${tokens.customer}`, 'idempotency-key': key },
+    payload: { ...orderInput, quoteToken }
+  });
+  const placed = await submit(quote.token);
+  assert.equal(placed.statusCode, 201, placed.body);
+  const { id } = placed.json().order;
+  const replay = await submit('refreshed-quote');
+  assert.equal(replay.statusCode, 201, replay.body);
+  assert.equal(replay.json().order.id, id);
+  assert.equal(placed.json().order.finalTotal, quote.finalTotal);
+  assert.equal(placed.json().order.amountPaid, 0);
+
+  const window = {
+    startsAt: new Date(Date.now() + 5 * 3_600_000).toISOString(),
+    endsAt: new Date(Date.now() + 6 * 3_600_000).toISOString()
+  };
+  const proposal = `/supplier/orders/${id}/delivery-window`;
+  const accept = `/supplier/orders/${id}/status`;
+  const otherLogin = await call('POST', '/auth/login', undefined, { phone: `${tag}-other`, password: 'ResetPassword123!' });
+  assert.equal(otherLogin.statusCode, 200, otherLogin.body);
+  assert.equal((await call('POST', proposal, otherLogin.json().token, window)).statusCode, 404);
+  assert.equal((await call('POST', proposal, tokens.supplier, window)).statusCode, 200);
+  assert.equal((await call('PATCH', accept, tokens.supplier, { status: 'CONFIRMED' })).statusCode, 409);
+  const approved = await call('POST', `/customer/orders/${id}/delivery-window/approve`, tokens.customer, window);
+  assert.equal(approved.statusCode, 200, approved.body);
+  const confirmed = await call('PATCH', accept, tokens.supplier, { status: 'CONFIRMED' });
+  assert.equal(confirmed.statusCode, 200, confirmed.body);
+  const saved = await app.prisma.order.findUniqueOrThrow({ where: { id } });
+  const schedule = saved.deliverySchedule as unknown as { confirmed: typeof window; events: Array<{ type: string }> };
+  assert.deepEqual(schedule.confirmed, window);
+  assert.deepEqual(schedule.events.map(event => event.type), ['PROPOSED', 'BUYER_APPROVED', 'YARD_CONFIRMED']);
+  assert.equal((await app.prisma.supplierProduct.findUniqueOrThrow({ where: { id: ids.product } })).stockQuantity, 8);
+  assert.equal((await call('GET', '/admin/delivery-exceptions', tokens.admin)).statusCode, 200);
+});

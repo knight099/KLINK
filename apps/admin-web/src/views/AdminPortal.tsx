@@ -128,6 +128,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
   const [paymentsError, setPaymentsError] = useState(false);
   const [paymentSearch, setPaymentSearch] = useState('');
 
+  const [deliveryExceptions, setDeliveryExceptions] = useState<Array<{ id: string; orderNumber: string; supplierName: string; reason: 'RESPONSE' | 'DELIVERY' }> | null>(null);
+  const [deliveryExceptionsError, setDeliveryExceptionsError] = useState(false);
+
+  useEffect(() => {
+    if (user?.role !== 'ADMIN' || subTab !== 'overview') return;
+    const controller = new AbortController();
+    setDeliveryExceptions(null);
+    setDeliveryExceptionsError(false);
+    apiFetch<{ orders: NonNullable<typeof deliveryExceptions> }>('/admin/delivery-exceptions', { signal: controller.signal })
+      .then(({ orders }) => { if (!controller.signal.aborted) setDeliveryExceptions(orders); })
+      .catch(() => { if (!controller.signal.aborted) setDeliveryExceptionsError(true); });
+    return () => controller.abort();
+  }, [user?.id, user?.role, subTab]);
+
   const [attentionOrders, setAttentionOrders] = useState<any[] | null>(null);
   const [attentionError, setAttentionError] = useState(false);
   const [suppliersLoading, setSuppliersLoading] = useState(true);
@@ -956,6 +970,23 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
       {/* OVERVIEW TAB */}
       {subTab === 'overview' && (
         <div className="space-y-6">
+          <section className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
+            <h2 className="text-lg font-semibold">{t('Delivery exceptions')}</h2>
+            {deliveryExceptionsError ? <FormNotice error>{t('Delivery exceptions could not be loaded.')}</FormNotice>
+              : deliveryExceptions === null ? <p role="status">{t('Loading delivery exceptions…')}</p>
+              : !deliveryExceptions.length ? <p>{t('No overdue pilot orders')}</p>
+              : <ul className="divide-y divide-stone-200">
+                  {deliveryExceptions.map(order => (
+                    <li key={order.id} className="flex flex-wrap items-center justify-between gap-3 py-2">
+                      <div className="min-w-0 break-words text-sm">
+                        <p className="font-semibold">{order.orderNumber}</p>
+                        <p>{order.supplierName} · {t(order.reason === 'RESPONSE' ? 'Yard response overdue' : 'Delivery window overdue')}</p>
+                      </div>
+                      <button type="button" className="min-h-11 underline" onClick={() => findOrder(order.orderNumber)}>{t('Open order')}</button>
+                    </li>
+                  ))}
+                </ul>}
+          </section>
           <div className="grid gap-4 lg:grid-cols-2">
             <section className="min-w-0 space-y-3 rounded-xl border border-stone-200 bg-white p-4">
               <h2 className="text-lg font-semibold">{t('Pending supplier approvals')}</h2>

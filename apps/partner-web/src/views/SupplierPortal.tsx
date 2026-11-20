@@ -1,4 +1,4 @@
-import { useLanguage, FormNotice, FormError, OrderStatus, PaymentStatus, SignInDialog, signInFailure, type FormFailure } from '@klink/ui';
+import { useLanguage, FormNotice, FormError, OrderStatus, PaymentStatus, YardDeliveryDetails, SignInDialog, signInFailure, type FormFailure } from '@klink/ui';
 import React, { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
@@ -192,6 +192,48 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
   const [isKhataLoading, setIsKhataLoading] = useState(false);
   const [profServiceDistricts, setProfServiceDistricts] = useState<string[]>([]);
 
+  const [deliveryPins, setDeliveryPins] = useState('');
+  const [earliestHour, setEarliestHour] = useState('');
+  const [latestHour, setLatestHour] = useState('');
+  const [deliverySettingsStatus, setDeliverySettingsStatus] = useState<'saved' | 'error' | 'saving' | null>(null);
+  const [windowOrder, setWindowOrder] = useState<any | null>(null);
+  const [windowStart, setWindowStart] = useState('');
+  const [windowEnd, setWindowEnd] = useState('');
+  const [windowStatus, setWindowStatus] = useState<'saving' | 'error' | null>(null);
+
+  const saveDeliverySettings = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (deliverySettingsStatus === 'saving') return;
+    setDeliverySettingsStatus('saving');
+    try {
+      await apiFetch('/supplier/delivery-settings', { method: 'PUT', body: JSON.stringify({
+        deliveryPincodes: [...new Set(deliveryPins.trim().split(/[\s,]+/).filter(Boolean))],
+        deliveryMinHours: earliestHour ? Number(earliestHour) : null,
+        deliveryMaxHours: latestHour ? Number(latestHour) : null
+      }) });
+      setDeliverySettingsStatus('saved');
+    } catch {
+      setDeliverySettingsStatus('error');
+    }
+  };
+
+  const proposeWindow = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!windowOrder || windowStatus === 'saving') return;
+    setWindowStatus('saving');
+    try {
+      const asIndiaTime = (date: string) => new Date(date + ':00+05:30').toISOString();
+      const result = await apiFetch<{ order: any }>(`/supplier/orders/${windowOrder.id}/delivery-window`, {
+        method: 'POST', body: JSON.stringify({ startsAt: asIndiaTime(windowStart), endsAt: asIndiaTime(windowEnd) })
+      });
+      setOrders(previous => previous.map(order => order.id === result.order.id ? { ...order, ...result.order } : order));
+      setWindowOrder(null);
+      setWindowStatus(null);
+    } catch {
+      setWindowStatus('error');
+    }
+  };
+
   // Loaders
   const loadDashboard = async () => {
     try {
@@ -264,6 +306,9 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
       const res = await apiFetch<any>('/supplier/profile');
       if (res.supplier) {
         setSupplierProfile(res.supplier);
+        setDeliveryPins((res.supplier.deliveryPincodes || []).join(', '));
+        setEarliestHour(String(res.supplier.deliveryMinHours ?? ''));
+        setLatestHour(String(res.supplier.deliveryMaxHours ?? ''));
         setProfBusinessName(res.supplier.businessName || '');
         setProfOwnerName(res.supplier.ownerName || '');
         setProfAddress(res.supplier.address || '');
@@ -1781,6 +1826,20 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                       )}
                     </div>
 
+                    {focusedOrderId && order.deliverySchedule && (
+                      <section className="space-y-2 rounded-xl border border-stone-200 p-3 text-sm">
+                        <YardDeliveryDetails schedule={order.deliverySchedule} />
+                        {order.deliverySchedule.proposed && <p>{t('Awaiting buyer approval')}</p>}
+                        {['PENDING_APPROVAL', 'CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY'].includes(order.status) && (
+                          <button type="button" className="min-h-11 underline" onClick={() => {
+                            setWindowOrder(order);
+                            setWindowStart('');
+                            setWindowEnd('');
+                            setWindowStatus(null);
+                          }}>{t('Propose a new window')}</button>
+                        )}
+                      </section>
+                    )}
                     {focusedOrderId && (
                       <section className="space-y-2 rounded-xl border border-stone-200 p-3">
                         <h3 className="text-sm font-semibold">{t('Payment history')}</h3>
@@ -1808,6 +1867,7 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
                             {t('Reject order')}
                           </button>
                           <button
+                            disabled={Boolean(order.deliverySchedule?.proposed)}
                             onClick={() => handleUpdateStatus(order.id, 'CONFIRMED')}
                             className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 shadow-xs"
                           >
@@ -2140,6 +2200,28 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
               <span>Yard Profile & Service Coverage updated successfully!</span>
             </div>
           )}
+
+          <form onSubmit={saveDeliverySettings} className="space-y-3 border-b border-stone-200 pb-5">
+            <h3 className="font-semibold">{t('Yard delivery settings')}</h3>
+            <label className="block text-sm">
+              {t('Serviceable PIN codes')}
+              <input value={deliveryPins} onChange={event => setDeliveryPins(event.target.value)}
+                className="klink-field block w-full rounded-lg border border-stone-400 px-3" />
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block text-sm">{t('Earliest delivery in hours')}
+                <input type="number" min={1} max={336} value={earliestHour} onChange={event => setEarliestHour(event.target.value)}
+                  className="klink-field block w-full rounded-lg border border-stone-400 px-3" />
+              </label>
+              <label className="block text-sm">{t('Latest delivery in hours')}
+                <input type="number" min={1} max={336} value={latestHour} onChange={event => setLatestHour(event.target.value)}
+                  className="klink-field block w-full rounded-lg border border-stone-400 px-3" />
+              </label>
+            </div>
+            {deliverySettingsStatus === 'error' && <FormNotice error>{t('Could not save delivery settings')}</FormNotice>}
+            {deliverySettingsStatus === 'saved' && <FormNotice>{t('Delivery settings saved')}</FormNotice>}
+            <button className="klink-primary" type="submit" disabled={deliverySettingsStatus === 'saving'}>{t('Save delivery settings')}</button>
+          </form>
 
           <form onSubmit={handleSaveProfile} className="space-y-4">
             <div>
@@ -2807,6 +2889,28 @@ export const SupplierPortal: React.FC<SupplierPortalProps> = ({ subTab, setSubTa
             </form>
           </div>
         </div>
+      )}
+
+      {windowOrder && (
+        <SignInDialog titleId="supplier-propose-window" onDismiss={() => { if (windowStatus !== 'saving') setWindowOrder(null); }}>
+          <h2 id="supplier-propose-window" className="font-semibold">{t('Propose a new window')}</h2>
+          <p className="break-all text-sm">{windowOrder.orderNumber}</p>
+          <form onSubmit={proposeWindow} className="space-y-3">
+            <label className="block text-sm">{t('Delivery window start')} (IST)
+              <input type="datetime-local" required value={windowStart} onChange={event => setWindowStart(event.target.value)}
+                className="klink-field block w-full rounded-lg border border-stone-400 px-3" />
+            </label>
+            <label className="block text-sm">{t('Delivery window end')} (IST)
+              <input type="datetime-local" required value={windowEnd} onChange={event => setWindowEnd(event.target.value)}
+                className="klink-field block w-full rounded-lg border border-stone-400 px-3" />
+            </label>
+            {windowStatus === 'error' && <FormNotice error>{t('Delivery window could not be updated')}</FormNotice>}
+            <div className="flex flex-wrap gap-2">
+              <button type="button" disabled={windowStatus === 'saving'} onClick={() => setWindowOrder(null)} className="min-h-11 underline">{t('Cancel')}</button>
+              <button type="submit" disabled={windowStatus === 'saving'} className="klink-primary">{t('Send proposed window')}</button>
+            </div>
+          </form>
+        </SignInDialog>
       )}
 
       {/* 2. MANUAL PAYMENT MODAL */}

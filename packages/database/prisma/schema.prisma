@@ -95,6 +95,10 @@ model Supplier {
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
+  deliveryPincodes String[]              @default([])
+  deliveryMinHours Int?
+  deliveryMaxHours Int?
+
   user             User                  @relation(fields: [userId], references: [id])
   district         District              @relation(fields: [districtId], references: [id])
   serviceAreas     SupplierServiceArea[]
@@ -194,6 +198,7 @@ model Order {
   driverPhone          String?
   vehicleNumber        String?
   deliveryChallanNo    String?
+  deliverySchedule     Json?
   dispatchedAt         DateTime?
   deliveredAt          DateTime?
   createdAt            DateTime        @default(now())

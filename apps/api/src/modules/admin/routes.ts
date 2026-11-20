@@ -1,3 +1,4 @@
+import { lockSupplier } from '../../lib/orders';
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
@@ -6,6 +7,24 @@ import { AdminCreateSupplierInputSchema } from '@klink/shared-types';
 export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
   // All admin routes require ADMIN role
   fastify.addHook('onRequest', fastify.requireRole('ADMIN'));
+
+  fastify.get('/delivery-exceptions', async () => {
+    const orders = await fastify.prisma.$queryRaw<Array<{
+      id: string; orderNumber: string; supplierName: string; reason: 'RESPONSE' | 'DELIVERY'
+    }>>`
+      SELECT o.id, o."orderNumber", s."businessName" AS "supplierName",
+             CASE WHEN o.status = 'PENDING_APPROVAL' THEN 'RESPONSE' ELSE 'DELIVERY' END AS reason
+      FROM "Order" o JOIN "Supplier" s ON s.id = o."supplierId"
+      WHERE o."deliverySchedule" IS NOT NULL AND (
+        (o.status = 'PENDING_APPROVAL' AND (o."deliverySchedule"->>'respondBy')::timestamptz < CURRENT_TIMESTAMP)
+        OR (o.status IN ('CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY')
+          AND (o."deliverySchedule"->'confirmed'->>'endsAt')::timestamptz < CURRENT_TIMESTAMP)
+      )
+      ORDER BY o."createdAt" ASC, o.id
+      LIMIT 100
+    `;
+    return { orders };
+  });
 
   // Marketplace Overview & Metrics (Roadmap Section 29)
   fastify.get(
@@ -295,13 +314,18 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const { deliveryFee, deliveryCharge, ...rest } = request.body;
       const finalDeliveryCharge = deliveryCharge ?? deliveryFee;
 
-      const updated = await fastify.prisma.supplierProduct.update({
-        where: { id },
-        data: {
-          ...rest,
-          ...(finalDeliveryCharge !== undefined ? { deliveryCharge: finalDeliveryCharge } : {})
-        },
-        include: { masterProduct: true }
+      const updated = await fastify.prisma.$transaction(async tx => {
+        const item = await tx.supplierProduct.findUnique({ where: { id }, select: { supplierId: true } });
+        if (!item) throw fastify.httpErrors.notFound('Supplier product not found');
+        await lockSupplier(tx, item.supplierId);
+        return tx.supplierProduct.update({
+          where: { id },
+          data: {
+            ...rest,
+            ...(finalDeliveryCharge !== undefined ? { deliveryCharge: finalDeliveryCharge } : {})
+          },
+          include: { masterProduct: true }
+        });
       });
 
       return { message: 'Product updated successfully', product: updated };

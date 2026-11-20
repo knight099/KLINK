@@ -1,3 +1,4 @@
+import { deliveryWindow, type DeliverySchedule, yardDeliverySettings } from '../../lib/yard-delivery';
 import { recalculateCustomerLedger } from '../../lib/ledger';
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import { lockSupplier, reserveStock, canTransition, money, acceptedStatuses } from '../../lib/orders';
@@ -107,6 +108,34 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
     }
   );
 
+  fastify.put('/delivery-settings', { schema: { body: yardDeliverySettings } }, async (request) => {
+    const id = getSupplierId(request);
+    return fastify.prisma.$transaction(async tx => {
+      await lockSupplier(tx, id);
+      return { supplier: await tx.supplier.update({ where: { id }, data: request.body }) };
+    });
+  });
+
+  fastify.post('/orders/:id/delivery-window', {
+    schema: { params: z.object({ id: z.string() }), body: deliveryWindow }
+  }, async request => {
+    const supplierId = getSupplierId(request);
+    const { id } = request.params;
+    return fastify.prisma.$transaction(async tx => {
+      await lockSupplier(tx, supplierId);
+      const order = await tx.order.findFirst({ where: { id, supplierId } });
+      if (!order) throw fastify.httpErrors.notFound('Order not found');
+      const schedule = order.deliverySchedule as DeliverySchedule | null;
+      if (!schedule || !['PENDING_APPROVAL', 'CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY'].includes(order.status) ||
+          Date.parse(request.body.startsAt) <= Date.now()) {
+        throw fastify.httpErrors.conflict('A future delivery window is required for an open pilot order');
+      }
+      schedule.proposed = request.body;
+      schedule.events.push({ type: 'PROPOSED', at: new Date().toISOString(), window: request.body });
+      return { order: await tx.order.update({ where: { id }, data: { deliverySchedule: schedule } }) };
+    });
+  });
+
   // Supplier Profile management (Update address, logo, description, etc.)
   fastify.get(
     '/profile',
@@ -148,25 +177,28 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const supplierId = getSupplierId(request);
       const { serviceDistrictIds, ...rest } = request.body;
 
-      if (serviceDistrictIds && Array.isArray(serviceDistrictIds)) {
-        await fastify.prisma.supplierServiceArea.deleteMany({
-          where: { supplierId }
-        });
-        if (serviceDistrictIds.length > 0) {
-          await fastify.prisma.supplierServiceArea.createMany({
-            data: serviceDistrictIds.map((districtId) => ({
-              supplierId,
-              districtId,
-              isActive: true
-            }))
+      const updated = await fastify.prisma.$transaction(async tx => {
+        await lockSupplier(tx, supplierId);
+        if (serviceDistrictIds && Array.isArray(serviceDistrictIds)) {
+          await tx.supplierServiceArea.deleteMany({
+            where: { supplierId }
           });
+          if (serviceDistrictIds.length > 0) {
+            await tx.supplierServiceArea.createMany({
+              data: serviceDistrictIds.map((districtId) => ({
+                supplierId,
+                districtId,
+                isActive: true
+              }))
+            });
+          }
         }
-      }
 
-      const updated = await fastify.prisma.supplier.update({
-        where: { id: supplierId },
-        data: rest,
-        include: { district: true, serviceAreas: { include: { district: true } } }
+        return tx.supplier.update({
+          where: { id: supplierId },
+          data: rest,
+          include: { district: true, serviceAreas: { include: { district: true } } }
+        });
       });
       return { message: 'Profile updated successfully', supplier: updated };
     }
@@ -218,31 +250,34 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
         lowStockThreshold
       } = request.body;
 
-      const product = await fastify.prisma.supplierProduct.upsert({
-        where: {
-          supplierId_masterProductId: { supplierId, masterProductId }
-        },
-        update: {
-          sellingPrice,
-          unit,
-          stockQuantity,
-          minOrderQty,
-          deliveryCharge,
-          lowStockThreshold,
-          isAvailable: true
-        },
-        create: {
-          supplierId,
-          masterProductId,
-          sellingPrice,
-          unit,
-          stockQuantity,
-          minOrderQty,
-          deliveryCharge,
-          lowStockThreshold,
-          isAvailable: true
-        },
-        include: { masterProduct: true }
+      const product = await fastify.prisma.$transaction(async tx => {
+        await lockSupplier(tx, supplierId);
+        return tx.supplierProduct.upsert({
+          where: {
+            supplierId_masterProductId: { supplierId, masterProductId }
+          },
+          update: {
+            sellingPrice,
+            unit,
+            stockQuantity,
+            minOrderQty,
+            deliveryCharge,
+            lowStockThreshold,
+            isAvailable: true
+          },
+          create: {
+            supplierId,
+            masterProductId,
+            sellingPrice,
+            unit,
+            stockQuantity,
+            minOrderQty,
+            deliveryCharge,
+            lowStockThreshold,
+            isAvailable: true
+          },
+          include: { masterProduct: true }
+        });
       });
 
       return reply.status(201).send({ product });
@@ -271,10 +306,13 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
         return reply.status(404).send({ error: 'Product not found in your inventory' });
       }
 
-      const product = await fastify.prisma.supplierProduct.update({
-        where: { id },
-        data: request.body,
-        include: { masterProduct: true }
+      const product = await fastify.prisma.$transaction(async tx => {
+        await lockSupplier(tx, supplierId);
+        return tx.supplierProduct.update({
+          where: { id },
+          data: request.body,
+          include: { masterProduct: true }
+        });
       });
 
       return { product };
@@ -350,7 +388,15 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
         if (['CANCELLED', 'REJECTED'].includes(status) && order.amountPaid > 0) {
           throw fastify.httpErrors.badRequest('Paid orders require a reconciled refund before cancellation');
         }
+        const schedule = order.deliverySchedule as DeliverySchedule | null;
         if (order.status === 'PENDING_APPROVAL' && status === 'CONFIRMED') {
+          if (schedule) {
+            if (schedule.proposed || Date.parse(schedule.requested.endsAt) <= Date.now()) {
+              throw fastify.httpErrors.conflict('The buyer must approve a current delivery window before acceptance');
+            }
+            schedule.confirmed = schedule.requested;
+            schedule.events.push({ type: 'YARD_CONFIRMED', at: new Date().toISOString(), window: schedule.confirmed });
+          }
           await reserveStock(tx, supplierId, order.items);
         }
 
@@ -376,6 +422,7 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
           where: { id },
           data: {
             status,
+            ...(schedule && { deliverySchedule: schedule }),
             rejectionReason: status === 'REJECTED' ? rejectionReason || 'Product or delivery unavailable' : null,
             ...(status === 'DELIVERED' ? { deliveredAt: new Date() } : {}),
             ...(isCancelledOrRejected ? { balancePending: 0 } : {})
@@ -951,6 +998,10 @@ export const supplierRoutes: FastifyPluginAsyncZod = async (fastify) => {
         await lockSupplier(tx, supplierId);
         const order = await tx.order.findFirst({ where: { id, supplierId }, include: { items: true } });
         if (!order) throw fastify.httpErrors.notFound('Order not found');
+        const schedule = order.deliverySchedule as DeliverySchedule | null;
+        if (schedule && (!schedule.confirmed || schedule.proposed || Date.parse(schedule.confirmed.endsAt) <= Date.now())) {
+          throw fastify.httpErrors.conflict('Confirm a current delivery window before dispatch');
+        }
         if (!['PENDING_APPROVAL', 'CONFIRMED', 'PREPARING'].includes(order.status)) throw fastify.httpErrors.badRequest(`Cannot dispatch ${order.status} order`);
         if (order.status === 'PENDING_APPROVAL') await reserveStock(tx, supplierId, order.items);
 

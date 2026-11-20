@@ -1,3 +1,5 @@
+import { buildCheckout, checkoutQuoteInput, checkoutToken, deliveryOffer, pinCode } from '../../lib/yard-delivery';
+import { money } from '../../lib/orders';
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 
@@ -79,6 +81,12 @@ export const marketplaceRoutes: FastifyPluginAsyncZod = async (fastify) => {
     }
   );
 
+  fastify.post('/delivery-quote', { schema: { body: checkoutQuoteInput } }, async (request) => {
+    const quote = await buildCheckout(fastify.prisma, request.body);
+    const expiresAt = Date.now() + 15 * 60_000;
+    return { ...quote, expiresAt, token: checkoutToken(request.body, quote, expiresAt) };
+  });
+
   // Compare suppliers for a master product
   fastify.get(
     '/compare/:masterProductId',
@@ -90,13 +98,14 @@ export const marketplaceRoutes: FastifyPluginAsyncZod = async (fastify) => {
         querystring: z.object({
           districtId: z.string().optional(),
           districtCode: z.string().optional(),
-          quantity: z.coerce.number().optional().default(1)
+          pincode: pinCode.optional(),
+          quantity: z.coerce.number().finite().positive().max(1_000_000_000).optional().default(1)
         })
       }
     },
     async (request, reply) => {
       const { masterProductId } = request.params;
-      const { districtId, districtCode, quantity } = request.query;
+      const { districtId, districtCode, quantity, pincode } = request.query;
 
       const masterProduct = await fastify.prisma.masterProduct.findUnique({
         where: { id: masterProductId },
@@ -129,8 +138,8 @@ export const marketplaceRoutes: FastifyPluginAsyncZod = async (fastify) => {
       });
 
       const comparisons = supplierProducts.map((sp) => {
-        const materialTotal = sp.sellingPrice * quantity;
-        const totalEstimated = materialTotal + sp.deliveryCharge;
+        const materialTotal = money(sp.sellingPrice * quantity);
+        const totalEstimated = money(materialTotal + sp.deliveryCharge);
         return {
           supplierProductId: sp.id,
           supplierId: sp.supplierId,
@@ -143,6 +152,7 @@ export const marketplaceRoutes: FastifyPluginAsyncZod = async (fastify) => {
           stockQuantity: sp.stockQuantity,
           minOrderQty: sp.minOrderQty,
           deliveryCharge: sp.deliveryCharge,
+          deliveryOffer: deliveryOffer(sp.supplier, pincode),
           materialTotal,
           totalEstimated,
           inStock: sp.stockQuantity >= quantity,
@@ -152,8 +162,8 @@ export const marketplaceRoutes: FastifyPluginAsyncZod = async (fastify) => {
 
       // Sort by actual landed cost (totalEstimated) so Best Landed Rate is 100% mathematically accurate
       comparisons.sort((a, b) => {
-        const aValid = a.inStock && a.meetsMinOrder ? 1 : 0;
-        const bValid = b.inStock && b.meetsMinOrder ? 1 : 0;
+        const aValid = a.inStock && a.meetsMinOrder && a.deliveryOffer?.eligible !== false ? 1 : 0;
+        const bValid = b.inStock && b.meetsMinOrder && b.deliveryOffer?.eligible !== false ? 1 : 0;
         if (aValid !== bValid) return bValid - aValid;
         if (a.totalEstimated !== b.totalEstimated) return a.totalEstimated - b.totalEstimated;
         return a.sellingPrice - b.sellingPrice;

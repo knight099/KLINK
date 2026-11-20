@@ -39,6 +39,7 @@ export const CreateOrderItemInputSchema = z.object({
 });
 
 export const CreateOrderInputSchema = z.object({
+  quoteToken: z.string().max(160).optional(),
   supplierId: z.string().min(1, 'Supplier is required (1 cart = 1 supplier)'),
   districtId: z.string().min(1, 'District is required'),
   items: z.array(CreateOrderItemInputSchema).min(1).max(100).refine(items => new Set(items.map(i => i.supplierProductId)).size === items.length, 'Duplicate products are not allowed'),

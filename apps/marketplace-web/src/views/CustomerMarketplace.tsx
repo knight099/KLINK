@@ -1,4 +1,4 @@
-import { useLanguage, FormNotice, OrderStatus, PaymentStatus } from '@klink/ui';
+import { useLanguage, FormNotice, OrderStatus, PaymentStatus, YardDeliveryDetails } from '@klink/ui';
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../lib/api';
 import { useDistrict } from '../lib/district-context';
@@ -262,6 +262,22 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
   const [budgetModalProduct, setBudgetModalProduct] = useState<any | null>(null);
   const [targetBudgetAmount, setTargetBudgetAmount] = useState<number>(20000);
 
+  const [windowUpdate, setWindowUpdate] = useState<{ orderId: string; pending: boolean; error?: boolean } | null>(null);
+
+  const approveDeliveryWindow = async (order: any) => {
+    if (windowUpdate?.pending) return;
+    setWindowUpdate({ orderId: order.id, pending: true });
+    try {
+      const result = await apiFetch<{ order: any }>(`/customer/orders/${order.id}/delivery-window/approve`, {
+        method: 'POST', body: JSON.stringify(order.deliverySchedule.proposed)
+      });
+      setOrders(previous => previous.map(item => item.id === order.id ? { ...item, ...result.order } : item));
+      setWindowUpdate(null);
+    } catch {
+      setWindowUpdate({ orderId: order.id, pending: false, error: true });
+    }
+  };
+
   // Handle Customer Order Cancellation
   const handleCancelOrder = async (orderId: string) => {
     if (!window.confirm(t('Are you sure you want to cancel this pending order?'))) return;
@@ -518,6 +534,21 @@ export const CustomerMarketplace: React.FC<CustomerMarketplaceProps> = ({
                         )}
                       </div>
                     </div>
+
+                    {order.deliverySchedule && (
+                      <section className="space-y-2 rounded-xl bg-stone-50 p-3 text-sm">
+                        <YardDeliveryDetails schedule={order.deliverySchedule} />
+                        {order.deliverySchedule.proposed && ['PENDING_APPROVAL', 'CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY'].includes(order.status) && (
+                          <button type="button" className="klink-primary" disabled={windowUpdate?.pending}
+                            onClick={() => approveDeliveryWindow(order)}>{t('Approve delivery window')}</button>
+                        )}
+                        {windowUpdate?.orderId === order.id && windowUpdate?.error && <FormNotice error>{t('Delivery window could not be updated')}</FormNotice>}
+                        {(['REJECTED', 'CANCELLED'].includes(order.status) ||
+                          (order.status === 'PENDING_APPROVAL' && Date.parse(order.deliverySchedule.respondBy) < Date.now())) && (
+                          <button type="button" className="min-h-11 underline" onClick={() => setSubTab('shop')}>{t('Find materials')}</button>
+                        )}
+                      </section>
+                    )}
 
                     {/* 4-Stage Delivery Stepper */}
                     <div className="grid grid-cols-4 gap-2 text-center text-xs">
