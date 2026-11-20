@@ -1,5 +1,6 @@
+import { buildCheckout, checkoutToken, type DeliverySchedule, scheduleFromOffer } from '../../lib/yard-delivery';
 import { createHash, randomUUID } from 'node:crypto';
-import { lockSupplier, money } from '../../lib/orders';
+import { lockSupplier } from '../../lib/orders';
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { CreateOrderInputSchema } from '@klink/shared-types';
@@ -40,8 +41,9 @@ export const customerRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const idempotencyKey = key.data
         ? 'customer:' + createHash('sha256').update(JSON.stringify([customerId, key.data])).digest('hex')
         : undefined;
+      const { quoteToken, ...orderIntent } = request.body;
       const requestHash = idempotencyKey
-        ? createHash('sha256').update(JSON.stringify(request.body)).digest('hex')
+        ? createHash('sha256').update(JSON.stringify(orderIntent)).digest('hex')
         : undefined;
 
       const order = await fastify.prisma.$transaction(async (tx) => {
@@ -60,61 +62,16 @@ export const customerRoutes: FastifyPluginAsyncZod = async (fastify) => {
         }
 
         // 1. Validate supplier
-        const supplier = await tx.supplier.findUnique({
-          where: { id: supplierId, status: 'ACTIVE' }
-        });
-        if (!supplier) {
-          throw fastify.httpErrors.badRequest('Supplier not found or not currently active');
-        }
-
-        const serviceArea = await tx.supplierServiceArea.findFirst({ where: { supplierId, districtId, isActive: true, district: { isActive: true } } });
-        if (!serviceArea) throw fastify.httpErrors.badRequest('Supplier does not serve this active district');
-
-        // 2. Fetch all supplier products and validate single-supplier constraint
-        const supplierProductIds = items.map((i) => i.supplierProductId);
-        const supplierProducts = await tx.supplierProduct.findMany({
-          where: {
-            id: { in: supplierProductIds },
-            supplierId
-          },
-          include: { masterProduct: true }
-        });
-
-        if (supplierProducts.length !== items.length) {
-          throw fastify.httpErrors.badRequest('All ordered items must belong to the selected supplier (1 cart = 1 supplier)');
-        }
-
-        // 3. Calculate totals & build order items
-        let totalMaterialAmount = 0;
-        let maxDeliveryCharge = 0; // Or sum if individual, standard is fixed trip charge
-        const orderItemsData: any[] = [];
-
-        for (const item of items) {
-          const sp = supplierProducts.find((p) => p.id === item.supplierProductId);
-          if (!sp) continue;
-
-          if (!sp.isAvailable || !sp.masterProduct.isActive || sp.stockQuantity < item.quantity) throw fastify.httpErrors.badRequest('Material is unavailable or has insufficient stock');
-          if (item.quantity < sp.minOrderQty) {
-            throw fastify.httpErrors.badRequest(`Minimum order quantity for ${sp.masterProduct.name} is ${sp.minOrderQty} ${sp.unit}`);
+        const quote = await buildCheckout(tx, { supplierId, districtId, pincode, items });
+        const { lines: orderItemsData, materialTotal: totalMaterialAmount, deliveryCharge: maxDeliveryCharge, finalTotal } = quote;
+        const token = quoteToken;
+        if (quote.offer || token) {
+          const deadline = Number(token?.split('.')[0]);
+          if (!Number.isSafeInteger(deadline) || deadline <= Date.now() || deadline > Date.now() + 15 * 60_000 ||
+              token !== checkoutToken({ supplierId, districtId, pincode }, quote, deadline)) {
+            throw fastify.httpErrors.conflict('The quote expired or changed. Review the latest quote before placing the order.');
           }
-
-          const itemTotal = money(sp.sellingPrice * item.quantity);
-          totalMaterialAmount += itemTotal;
-          if (sp.deliveryCharge > maxDeliveryCharge) {
-            maxDeliveryCharge = sp.deliveryCharge;
-          }
-
-          orderItemsData.push({
-            supplierProductId: sp.id,
-            masterProductName: sp.masterProduct.name,
-            unit: sp.unit,
-            quantity: item.quantity,
-            unitPrice: sp.sellingPrice,
-            totalPrice: itemTotal
-          });
         }
-
-        const finalTotal = money(totalMaterialAmount + maxDeliveryCharge);
 
         // Generate collision-proof order number: KLK-<DISTRICT>-YYMMDD-<RANDOM>
         const district = await tx.district.findUnique({ where: { id: districtId } });
@@ -142,6 +99,7 @@ export const customerRoutes: FastifyPluginAsyncZod = async (fastify) => {
             deliveryAddress,
             landmark,
             pincode,
+            ...(quote.offer && { deliverySchedule: scheduleFromOffer(quote.offer) }),
             deliveryInstructions,
             siteContactPhone,
             items: {
@@ -161,6 +119,34 @@ export const customerRoutes: FastifyPluginAsyncZod = async (fastify) => {
       });
     }
   );
+
+  fastify.post('/orders/:id/delivery-window/approve', {
+    schema: { params: z.object({ id: z.string() }), body: z.object({ startsAt: z.string(), endsAt: z.string() }) }
+  }, async (request) => {
+    const { id } = request.params;
+    const selector = { id, customerId: request.user.customerId ?? '' };
+    const existing = await fastify.prisma.order.findFirst({ where: selector });
+    if (!existing) throw fastify.httpErrors.notFound('Order not found');
+    return fastify.prisma.$transaction(async tx => {
+      await lockSupplier(tx, existing.supplierId);
+      const order = await tx.order.findFirstOrThrow({ where: selector });
+      const schedule = order.deliverySchedule as DeliverySchedule | null;
+      const proposed = schedule?.proposed;
+      if (!schedule || !proposed || !['PENDING_APPROVAL', 'CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY'].includes(order.status) ||
+          proposed.startsAt !== request.body.startsAt || proposed.endsAt !== request.body.endsAt || Date.parse(proposed.endsAt) <= Date.now()) {
+        throw fastify.httpErrors.conflict('This delivery window is no longer available');
+      }
+      delete schedule.proposed;
+      if (order.status === 'PENDING_APPROVAL') {
+        schedule.requested = proposed;
+        schedule.respondBy = new Date(Date.now() + 3_600_000).toISOString();
+      } else {
+        schedule.confirmed = proposed;
+      }
+      schedule.events.push({ type: 'BUYER_APPROVED', at: new Date().toISOString(), window: proposed });
+      return { order: await tx.order.update({ where: { id }, data: { deliverySchedule: schedule } }) };
+    });
+  });
 
   // Customer order history
   fastify.get(

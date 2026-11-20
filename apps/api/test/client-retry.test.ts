@@ -25,7 +25,14 @@ for (const { app, endpoint } of operations) {
       return { ok: true, json: async () => ({ ok: true }) };
     } };
     runInNewContext(js, context);
-    const submit = () => context.exports.apiFetch(endpoint, { method: 'POST', body: JSON.stringify({ customerId: 'customer', amount: 10, paymentMode: 'CASH' }) });
+    let quoteVersion = 0;
+    const submit = () => context.exports.apiFetch(endpoint, {
+      method: 'POST',
+      body: JSON.stringify({
+        customerId: 'customer', amount: 10, paymentMode: 'CASH',
+        ...(endpoint === '/customer/orders' && { quoteToken: String(++quoteVersion) })
+      })
+    });
     await assert.rejects(submit(), /Response lost/);
     await submit();
     assert.equal(keys[0], keys[1], 'A transport retry must not create a duplicate operation');

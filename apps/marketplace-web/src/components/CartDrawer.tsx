@@ -45,7 +45,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
 
   const [addressLine, setAddressLine] = useState('');
   const [landmark, setLandmark] = useState('');
-  const [pincode, setPincode] = useState('846001');
+  const [pincode, setPincode] = useState(() => localStorage.getItem('klink-delivery-pin') || '');
   const [sitePhone, setSitePhone] = useState<string | null>(null);
   const [instructions, setInstructions] = useState('');
   const [paymentChoice, setPaymentChoice] = useState<'COD' | 'UPI' | 'UDHAAR'>('COD');
@@ -72,7 +72,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
       setSelectedAddressId(null);
       setAddressLine('');
       setLandmark('');
-      setPincode('846001');
+      setPincode('');
       setSitePhone(null);
       setInstructions('');
       setSaveThisAddress(false);
@@ -103,12 +103,53 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
           setSelectedAddressId(def.id);
           setAddressLine(def.addressLine);
           setLandmark(def.landmark || '');
-          setPincode(def.pincode || '846001');
+          setPincode(def.pincode || '');
         }
       })
       .catch((err) => console.log('Could not load saved addresses:', err));
     return () => { active = false; };
   }, [isOpen, user?.id]);
+
+  type CartQuote = {
+    token: string;
+    materialTotal: number;
+    deliveryCharge: number;
+    finalTotal: number;
+    offer: { minHours: number; maxHours: number } | null;
+  };
+  const [quoted, setQuoted] = useState<{ request: string; quote: CartQuote } | null>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [quoteAttempt, setQuoteAttempt] = useState(0);
+  const quoteRequest = isOpen && currentStep === 'review' && supplierId && activeDistrict
+    ? JSON.stringify({
+        supplierId, districtId: activeDistrict.id, pincode: pincode.trim(),
+        items: items.map(({ supplierProductId, quantity }) => ({ supplierProductId, quantity }))
+      })
+    : null;
+  const quote = quoteRequest && quoted?.request === quoteRequest ? quoted.quote : null;
+  const reviewTotal = quote?.finalTotal ?? finalTotal;
+
+  useEffect(() => {
+    if (isOpen && !addressEdited.current) setPincode(localStorage.getItem('klink-delivery-pin') || '');
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!quoteRequest || quoted?.request === quoteRequest) return;
+    setQuoteError(null);
+    const controller = new AbortController();
+    apiFetch<CartQuote>('/marketplace/delivery-quote', { method: 'POST', body: quoteRequest, signal: controller.signal })
+      .then(result => {
+        if (controller.signal.aborted) return;
+        setQuoteError(null);
+        setQuoted({ request: quoteRequest, quote: result });
+      })
+      .catch(error => {
+        if (controller.signal.aborted) return;
+        setQuoted(null);
+        setQuoteError(error.message);
+      });
+    return () => controller.abort();
+  }, [quoteRequest, quoteAttempt, quoted?.request]);
 
   const drawer = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -158,7 +199,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
   const validateDelivery = () => {
     if (!activeDistrict) return 'Please select a district';
     if (addressLine.trim().length < 5) return 'Enter a delivery address with at least 5 characters.';
-    if (!/^\d{6}$/.test(pincode.trim())) return 'Enter a 6-digit PIN code.';
+    if (!/^[1-9][0-9]{5}$/.test(pincode.trim())) return 'Enter a 6-digit PIN code.';
     if (!/^\d{10}$/.test(contactPhone.trim())) return 'Enter a 10-digit contact number.';
     return null;
   };
@@ -179,6 +220,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
       moveTo('review');
       return;
     }
+    if (!quote) return;
     if (!user) {
       setAuthModalMode('LOGIN');
       setIsAuthModalOpen(true);
@@ -193,6 +235,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
     try {
       const payload = {
         supplierId,
+        quoteToken: quote.token,
         districtId: activeDistrict.id,
         items: items.map((i) => ({
           supplierProductId: i.supplierProductId,
@@ -228,6 +271,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
     } catch (err: any) {
       if (!err?.status || err.status >= 500) {
         setError({ fallback: 'Order response was interrupted. Retry the same order to confirm.' });
+      } else if (err.status === 409) {
+        setQuoted(null);
+        setQuoteAttempt(attempt => attempt + 1);
+        setError({ fallback: 'Quote changed or expired. Review the latest terms.' });
       } else {
         setError({ message: err.message, status: err.status, fallback: 'Failed to place order' });
       }
@@ -463,7 +510,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                               setSelectedAddressId(addr.id);
                               setAddressLine(addr.addressLine);
                               setLandmark(addr.landmark || '');
-                              setPincode(addr.pincode || '846001');
+                              setPincode(addr.pincode || '');
                             }}
                             className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all text-left flex items-center space-x-1 cursor-pointer border ${
                               isSelected
@@ -482,7 +529,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                           setSelectedAddressId(null);
                           setAddressLine('');
                           setLandmark('');
-                          setPincode('846001');
+                          setPincode('');
                         }}
                         className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-all border border-dashed cursor-pointer ${
                           selectedAddressId === null
@@ -614,23 +661,33 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                 </div>
               )}
 
+              {currentStep === 'review' && !quote && (
+                <FormError failure={{ fallback: quoteError ? 'Could not get a quote. Check your PIN code and cart.' : 'Getting the latest yard quote…' }} />
+              )}
+              {currentStep === 'review' && quoteError && !quote && (
+                <button type="button" className="min-h-11 underline" onClick={() => {
+                  setQuoteError(null);
+                  setQuoteAttempt(attempt => attempt + 1);
+                }}>{t('Try again')}</button>
+              )}
+              {quote?.offer && <p className="text-sm font-semibold">{t('Delivery estimate after ordering')}: {quote.offer.minHours}–{quote.offer.maxHours} {t('Hours')}</p>}
               {/* Price Breakdown */}
               <div className="p-4 rounded-xl bg-white border border-stone-200 space-y-2 text-xs">
                 <div className="flex justify-between text-stone-600">
                   <span>{t('Materials Subtotal')}</span>
                   <span className="font-mono font-medium text-stone-900 tabular-nums">
-                    ₹{totalMaterialAmount.toLocaleString('en-IN')}
+                    ₹{(quote?.materialTotal ?? totalMaterialAmount).toLocaleString('en-IN')}
                   </span>
                 </div>
                 <div className="flex justify-between text-stone-600">
                   <span>{t('Tractor / Truck Carriage')}</span>
                   <span className="font-mono font-medium text-stone-900 tabular-nums">
-                    ₹{deliveryCharge.toLocaleString('en-IN')}
+                    ₹{(quote?.deliveryCharge ?? deliveryCharge).toLocaleString('en-IN')}
                   </span>
                 </div>
                 <div className="border-t border-dashed border-stone-200 pt-2 flex justify-between text-sm font-semibold text-stone-900">
                   <span>{t('Amount due')}</span>
-                  <span className="font-mono font-bold text-stone-900 text-base tabular-nums">₹{finalTotal.toLocaleString('en-IN')}</span>
+                  <span className="font-mono font-bold text-stone-900 text-base tabular-nums">₹{reviewTotal.toLocaleString('en-IN')}</span>
                 </div>
                 <p className="pt-1 text-stone-700">{t('This is your payment preference. No payment is collected at checkout.')} {t('The full order amount remains due until the yard records a received payment.')}</p>
               </div>
@@ -647,7 +704,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
             <button
               type="button"
               onClick={handleNext}
-              disabled={isSubmitting}
+              disabled={isSubmitting || (currentStep === 'review' && !quote)}
               className="klink-primary w-full flex items-center justify-center gap-2"
             >
               <span>
@@ -655,7 +712,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                   : currentStep === 'delivery' ? t('Continue to review')
                   : !user ? t('Sign in to place your order')
                   : isSubmitting ? t('Placing order…')
-                  : `${t('Place order')} (₹${finalTotal.toLocaleString('en-IN')})`}
+                  : `${t('Place order')} (₹${reviewTotal.toLocaleString('en-IN')})`}
               </span>
               <ArrowRight className="w-4 h-4 stroke-[2]" />
             </button>

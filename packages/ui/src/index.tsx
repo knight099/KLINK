@@ -149,3 +149,41 @@ export function SignInDialog({ children, titleId, onDismiss }: {
     </dialog>
   );
 }
+
+type YardDeliveryWindow = { startsAt: string; endsAt: string };
+export type YardDeliverySchedule = {
+  requested: YardDeliveryWindow;
+  confirmed?: YardDeliveryWindow;
+  proposed?: YardDeliveryWindow;
+  respondBy: string;
+  events?: Array<{ type: 'PROPOSED' | 'BUYER_APPROVED' | 'YARD_CONFIRMED'; at: string; window: YardDeliveryWindow }>;
+};
+
+export function YardDeliveryDetails({ schedule }: { schedule: YardDeliverySchedule }) {
+  const { t, language } = useLanguage();
+  const format = new Intl.DateTimeFormat(language === 'hi' ? 'hi-IN' : 'en-IN', {
+    dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata'
+  });
+  const show = (window: YardDeliveryWindow) => `${format.format(new Date(window.startsAt))} – ${format.format(new Date(window.endsAt))}`;
+  const eventLabel = {
+    PROPOSED: 'Proposed delivery window',
+    BUYER_APPROVED: 'Approve delivery window',
+    YARD_CONFIRMED: 'Confirmed delivery window'
+  } as const;
+  return (
+    <div className="space-y-2">
+      <p>{t(schedule.confirmed ? 'Confirmed delivery window' : 'Estimated delivery window')}: {show(schedule.confirmed || schedule.requested)} IST</p>
+      {schedule.proposed && <p>{t('Proposed delivery window')}: {show(schedule.proposed)} IST</p>}
+      {!!schedule.events?.length && (
+        <details>
+          <summary>{t('Delivery changes')}</summary>
+          <ol className="space-y-1">
+            {schedule.events.map((event, index) => (
+              <li key={index}>{format.format(new Date(event.at))} · {t(eventLabel[event.type])}: {show(event.window)} IST</li>
+            ))}
+          </ol>
+        </details>
+      )}
+    </div>
+  );
+}

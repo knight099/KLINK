@@ -16,6 +16,7 @@ interface SupplierQuote {
   stockQuantity: number;
   minOrderQty: number;
   inStock: boolean;
+  deliveryOffer?: { eligible: boolean | null; minHours: number; maxHours: number } | null;
   meetsMinOrder: boolean;
 }
 
@@ -40,6 +41,7 @@ export function MaterialComparison({ material, onBack, onOpenCart }: {
   const { activeDistrict, isLoading: isLoadingDistrict } = useDistrict();
   const { addItem, items } = useCart();
   const heading = useRef<HTMLHeadingElement>(null);
+  const [pincode, setPincode] = useState(() => localStorage.getItem('klink-delivery-pin') || '');
   const [quantityInput, setQuantityInput] = useState('1');
   const [quotes, setQuotes] = useState<Quotes | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -47,7 +49,7 @@ export function MaterialComparison({ material, onBack, onOpenCart }: {
   const validQuantity = Number.isFinite(quantity) && quantity > 0 && quantity <= 1_000_000_000;
   const districtId = activeDistrict?.id;
   const query = validQuantity && districtId
-    ? new URLSearchParams({ districtId, quantity: String(quantity) }).toString()
+    ? new URLSearchParams({ districtId, quantity: String(quantity), ...(/^[1-9][0-9]{5}$/.test(pincode) && { pincode }) }).toString()
     : null;
   const current = quotes?.query === query ? quotes : null;
   const comparisons = current && 'comparisons' in current ? current.comparisons : [];
@@ -57,7 +59,7 @@ export function MaterialComparison({ material, onBack, onOpenCart }: {
     return Math.max(0, quote.stockQuantity - inCart);
   };
   const canAdd = (quote: SupplierQuote) =>
-    quote.inStock && quote.meetsMinOrder && quantity <= availableToAdd(quote);
+    quote.inStock && quote.meetsMinOrder && (!quote.deliveryOffer || quote.deliveryOffer.eligible === true) && quantity <= availableToAdd(quote);
 
   const unit = (code: string) => {
     const label = unitLabels[code.toUpperCase()];
@@ -98,7 +100,10 @@ export function MaterialComparison({ material, onBack, onOpenCart }: {
       unitPrice: quote.sellingPrice,
       deliveryCharge: quote.deliveryCharge,
     }, quantity);
-    if (added) onOpenCart();
+    if (added) {
+      if (/^[1-9][0-9]{5}$/.test(pincode)) localStorage.setItem('klink-delivery-pin', pincode);
+      onOpenCart();
+    }
   }
 
   return (
@@ -110,6 +115,11 @@ export function MaterialComparison({ material, onBack, onOpenCart }: {
         <h1 ref={heading} tabIndex={-1} className="break-words text-2xl font-semibold text-stone-900 sm:text-3xl">{material.name}</h1>
         {material.description && <p className="text-sm text-stone-700">{material.description}</p>}
         {activeDistrict && <p className="text-sm text-stone-700">{t('Delivery District')} · {activeDistrict.name}</p>}
+      </div>
+      <div>
+        <label htmlFor="compare-delivery-pin" className="block text-sm font-semibold">{t('PIN Code')}</label>
+        <input id="compare-delivery-pin" className="klink-field mt-2 w-full max-w-40 rounded-lg border border-stone-400 px-3"
+          inputMode="numeric" value={pincode} maxLength={6} onChange={event => setPincode(event.target.value.replace(/\D/g, '').slice(0, 6))} />
       </div>
       <div className="rounded-xl border border-stone-200 bg-white p-4">
         <label htmlFor="compare-quantity" className="block text-sm font-semibold text-stone-900">{t('Quantity')}</label>
@@ -163,6 +173,13 @@ export function MaterialComparison({ material, onBack, onOpenCart }: {
                     <div className="flex flex-wrap justify-between gap-x-2 border-t border-stone-200 pt-2 font-semibold"><dt>{t('Delivered total')}</dt><dd>{formatPrice(quote.totalEstimated)}</dd></div>
                   </dl>
                   {quantity > availableToAdd(quote) && <p className="text-sm text-red-800">{t('Available to add')}: {availableToAdd(quote)} {unit(code)}</p>}
+                  {quote.deliveryOffer ? (
+                    <p className="text-sm">
+                      {quote.deliveryOffer.eligible === true
+                        ? `${t('Delivery estimate after ordering')}: ${quote.deliveryOffer.minHours}–${quote.deliveryOffer.maxHours} ${t('Hours')}`
+                        : t(quote.deliveryOffer.eligible === false ? 'This yard does not serve this PIN code' : 'Enter PIN code to check coverage')}
+                    </p>
+                  ) : <p className="text-sm">{t('Delivery timing confirmed by the yard')}</p>}
                   {!quote.meetsMinOrder && <p className="text-sm text-red-800">{t('Minimum order quantity:')} {quote.minOrderQty} {unit(quote.unit)}</p>}
                   <button
                     type="button"

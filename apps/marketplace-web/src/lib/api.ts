@@ -40,7 +40,12 @@ export async function apiFetch<T>(
     (endpoint === '/customer/orders' || endpoint.endsWith('/payments') || endpoint === '/supplier/ledger/settle' ||
      endpoint === '/supplier/payments/manual' || endpoint === '/supplier/orders/manual');
   if (retriableWrite && !headers['Idempotency-Key']) {
-    const signature = new TextEncoder().encode(`${token || ''}:${endpoint}:${options.body || ''}`);
+    let attemptBody = options.body || '';
+    if (endpoint === '/customer/orders' && typeof attemptBody === 'string' && attemptBody) {
+      const { quoteToken, ...orderIntent } = JSON.parse(attemptBody);
+      attemptBody = JSON.stringify(orderIntent);
+    }
+    const signature = new TextEncoder().encode(`${token || ''}:${endpoint}:${attemptBody}`);
     const digest = await crypto.subtle.digest('SHA-256', signature);
     const hash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
     attemptStorageKey = `${getTokenStorageKey()}:pending:${hash}`;

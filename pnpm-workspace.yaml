@@ -12,6 +12,7 @@ onlyBuiltDependencies:
 overrides:
   deepmerge-ts: ^8.0.0
   esbuild: ^0.28.2
+  "@prisma/config>effect": 3.22.1
 
 patchedDependencies:
   picomatch@2.3.2: patches/picomatch@2.3.2.patch
