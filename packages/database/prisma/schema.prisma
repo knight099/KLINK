@@ -291,3 +291,10 @@ model LedgerReconciliation {
   after     Json
   createdAt DateTime @default(now()) @db.Timestamptz
 }
+
+model YardQuoteChange {
+  id        String   @id
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([createdAt])
+}

@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import type { Prisma } from '@klink/database';
 import { money } from './orders';
@@ -110,4 +110,34 @@ export function checkoutToken(
     supplierId, districtId, pincode, quote, expiresAt
   })).digest('hex');
   return `${expiresAt}.${digest}`;
+}
+
+type CheckoutIntent = Omit<z.infer<typeof checkoutQuoteInput>, 'pincode'> & { pincode?: string };
+
+function signCheckoutIntent(token: string, { supplierId, districtId, pincode, items }: CheckoutIntent) {
+  return createHmac('sha256', process.env.JWT_SECRET!)
+    .update('yard-delivery-quote-intent:')
+    .update(JSON.stringify([token, supplierId, districtId, pincode, items.map(item => [item.supplierProductId, item.quantity])]))
+    .digest('base64url');
+}
+
+export function issueCheckoutToken(intent: CheckoutIntent, quote: Awaited<ReturnType<typeof buildCheckout>>, expiresAt: number) {
+  const token = checkoutToken(intent, quote, expiresAt);
+  return quote.offer ? `${token}.${signCheckoutIntent(token, intent)}` : token;
+}
+
+export function checkoutQuoteStatus(token: string | undefined, intent: CheckoutIntent, quote: Awaited<ReturnType<typeof buildCheckout>>) {
+  if (!token) return quote.offer ? 'INVALID' : 'CURRENT';
+  const match = /^(\d+)\.([a-f0-9]{64})(?:\.([A-Za-z0-9_-]{43}))?$/.exec(token);
+  if (!match) return 'INVALID';
+  const [, timestamp, digest, signature] = match;
+  const expiresAt = Number(timestamp);
+  const now = Date.now();
+  if (!Number.isSafeInteger(expiresAt) || expiresAt <= now || expiresAt > now + 15 * 60_000) return 'INVALID';
+  const reviewed = `${timestamp}.${digest}`;
+  const current = checkoutToken(intent, quote, expiresAt);
+  if (!signature) return reviewed === current ? 'CURRENT' : 'INVALID';
+  const expected = signCheckoutIntent(reviewed, intent);
+  if (!timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return 'INVALID';
+  return reviewed === current ? 'CURRENT' : 'CHANGED';
 }
