@@ -242,6 +242,46 @@ test('reconciliation creates missing ledgers for accepted orders and receipts', 
   assert.equal((await reconcileLedgers(app.prisma, 'Repeat', true)).length, 0);
 });
 
+test('admin pilot metrics count recent commitments and deliveries within the final window', async () => {
+  const now = Date.now();
+  const iso = (minutes: number) => new Date(now + minutes * 60_000).toISOString();
+  const confirmed = { startsAt: iso(-30), endsAt: iso(-20) };
+  const schedule = {
+    requested: confirmed,
+    respondBy: iso(-60),
+    confirmed,
+    events: [{ type: 'YARD_CONFIRMED', at: iso(-90), window: confirmed }]
+  };
+  const fixtures = await Promise.all([order('DELIVERED'), order('DELIVERED'), order(), order('DELIVERED')]);
+  try {
+    for (const [index, fixture] of fixtures.entries()) {
+      await app.prisma.order.update({
+        where: { id: fixture.id },
+        data: {
+          createdAt: index === 3 ? new Date(now - 31 * 86_400_000) : new Date(iso(-120)),
+          deliverySchedule: index === 2
+            ? { requested: confirmed, respondBy: iso(-60), events: [] }
+            : schedule,
+          ...(index !== 2 && { deliveredAt: new Date(iso(index === 1 ? -19 : -20)) })
+        }
+      });
+    }
+    assert.equal((await call('GET', '/admin/delivery-exceptions', tokens.customer)).statusCode, 403);
+    const response = await call('GET', '/admin/delivery-exceptions', tokens.admin);
+    assert.equal(response.statusCode, 200, response.body);
+    const { orders, pilot } = response.json();
+    assert.ok(orders.some((item: { id: string }) => item.id === fixtures[2].id));
+    assert.deepEqual(pilot, {
+      periodDays: 30, placed: 3, confirmed: 2, averageConfirmationMinutes: 30,
+      completedDeliveries: 2, deliveredWithinWindow: 1, openExceptions: 1
+    });
+  } finally {
+    const orderIds = fixtures.map(fixture => fixture.id);
+    await app.prisma.orderItem.deleteMany({ where: { orderId: { in: orderIds } } });
+    await app.prisma.order.deleteMany({ where: { id: { in: orderIds } } });
+  }
+});
+
 test('a yard-managed order keeps the reviewed quote and requires buyer approval for a changed window', async () => {
   await app.prisma.supplierProduct.update({
     where: { id: ids.product },

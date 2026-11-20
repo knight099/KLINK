@@ -187,3 +187,42 @@ export function YardDeliveryDetails({ schedule }: { schedule: YardDeliverySchedu
     </div>
   );
 }
+
+export type YardDeliveryPilotMetrics = {
+  placed: number;
+  confirmed: number;
+  averageConfirmationMinutes: number | null;
+  completedDeliveries: number;
+  deliveredWithinWindow: number;
+  openExceptions: number;
+};
+
+export function YardDeliveryPilot({ metrics }: { metrics: YardDeliveryPilotMetrics }) {
+  const { t, language } = useLanguage();
+  const { format } = new Intl.NumberFormat(language === 'hi' ? 'hi-IN' : 'en-IN');
+  const figures: Array<[Message, string]> = [
+    ['Orders placed in the last 30 days', format(metrics.placed)],
+    ['Orders confirmed by yards', format(metrics.confirmed)],
+    ['Average minutes to confirm', metrics.averageConfirmationMinutes === null
+      ? t('No data yet')
+      : format(metrics.averageConfirmationMinutes)],
+    ['Deliveries within the confirmed window', metrics.completedDeliveries
+      ? `${format(metrics.deliveredWithinWindow)} / ${format(metrics.completedDeliveries)}`
+      : t('No data yet')],
+    ['Open exceptions across all orders', format(metrics.openExceptions)]
+  ];
+
+  return (
+    <section aria-label={t('Delivery pilot')}>
+      <h3 className="font-semibold">{t('Delivery pilot')}</h3>
+      <dl className="mt-2 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+        {figures.map(([label, value]) => (
+          <div key={label} className="min-w-0 rounded-lg bg-stone-50 p-3">
+            <dt>{t(label)}</dt>
+            <dd className="mt-1 font-semibold tabular-nums">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
