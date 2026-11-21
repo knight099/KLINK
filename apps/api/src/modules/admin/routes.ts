@@ -10,10 +10,11 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
 
   fastify.get('/delivery-exceptions', async () => {
     const orders = await fastify.prisma.$queryRaw<Array<{
-      id: string; orderNumber: string; supplierName: string; reason: 'RESPONSE' | 'DELIVERY'
+      id: string; orderNumber: string; supplierName: string; reason: 'RESPONSE' | 'DELIVERY'; total: number
     }>>`
       SELECT o.id, o."orderNumber", s."businessName" AS "supplierName",
-             CASE WHEN o.status = 'PENDING_APPROVAL' THEN 'RESPONSE' ELSE 'DELIVERY' END AS reason
+             CASE WHEN o.status = 'PENDING_APPROVAL' THEN 'RESPONSE' ELSE 'DELIVERY' END AS reason,
+             COUNT(*) OVER ()::int AS total
       FROM "Order" o JOIN "Supplier" s ON s.id = o."supplierId"
       WHERE o."deliverySchedule" IS NOT NULL AND (
         (o.status = 'PENDING_APPROVAL' AND (o."deliverySchedule"->>'respondBy')::timestamptz < CURRENT_TIMESTAMP)
@@ -23,7 +24,44 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
       ORDER BY o."createdAt" ASC, o.id
       LIMIT 100
     `;
-    return { orders };
+    const periodDays = 30;
+    const [metrics] = await fastify.prisma.$queryRaw<Array<{
+      placed: number;
+      confirmed: number;
+      averageConfirmationMinutes: number | null;
+      completedDeliveries: number;
+      deliveredWithinWindow: number;
+      changedQuotes: number;
+    }>>`
+      WITH recent_pilot_orders AS (
+        SELECT "createdAt" AT TIME ZONE 'UTC' AS placed_at,
+               "deliveredAt" AT TIME ZONE 'UTC' AS delivered_at,
+               ("deliverySchedule"->'confirmed'->>'startsAt')::timestamptz AS starts_at,
+               ("deliverySchedule"->'confirmed'->>'endsAt')::timestamptz AS ends_at,
+               (
+                 SELECT MIN((event->>'at')::timestamptz)
+                 FROM jsonb_array_elements("deliverySchedule"->'events') AS event
+                 WHERE event->>'type' = 'YARD_CONFIRMED'
+               ) AS confirmed_at
+        FROM "Order"
+        WHERE "deliverySchedule" IS NOT NULL
+          AND "createdAt" >= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - make_interval(days => ${periodDays}::int)
+      )
+      SELECT COUNT(*)::int AS placed,
+             COUNT(confirmed_at)::int AS confirmed,
+             ROUND(AVG(EXTRACT(EPOCH FROM confirmed_at - placed_at) / 60))::int AS "averageConfirmationMinutes",
+             COUNT(delivered_at) FILTER (WHERE starts_at IS NOT NULL AND ends_at IS NOT NULL)::int AS "completedDeliveries",
+             COUNT(*) FILTER (WHERE delivered_at BETWEEN starts_at AND ends_at)::int AS "deliveredWithinWindow",
+             (
+               SELECT COUNT(*)::int FROM "YardQuoteChange"
+               WHERE "createdAt" >= CURRENT_TIMESTAMP - make_interval(days => ${periodDays}::int)
+             ) AS "changedQuotes"
+      FROM recent_pilot_orders
+    `;
+    return {
+      orders: orders.map(({ id, orderNumber, supplierName, reason }) => ({ id, orderNumber, supplierName, reason })),
+      pilot: { periodDays, ...metrics, openExceptions: orders[0]?.total ?? 0 }
+    };
   });
 
   // Marketplace Overview & Metrics (Roadmap Section 29)

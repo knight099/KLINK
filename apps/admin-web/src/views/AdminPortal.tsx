@@ -1,4 +1,4 @@
-import { useLanguage, FormError, OrderStatus, PaymentStatus, FormNotice, SignInDialog, signInFailure, type FormFailure } from '@klink/ui';
+import { useLanguage, FormError, OrderStatus, PaymentStatus, FormNotice, SignInDialog, signInFailure, YardDeliveryPilot, type FormFailure, type YardDeliveryPilotMetrics } from '@klink/ui';
 import React, { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../lib/auth-context';
@@ -129,15 +129,21 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
   const [paymentSearch, setPaymentSearch] = useState('');
 
   const [deliveryExceptions, setDeliveryExceptions] = useState<Array<{ id: string; orderNumber: string; supplierName: string; reason: 'RESPONSE' | 'DELIVERY' }> | null>(null);
+  const [deliveryPilot, setDeliveryPilot] = useState<YardDeliveryPilotMetrics | null>(null);
   const [deliveryExceptionsError, setDeliveryExceptionsError] = useState(false);
 
   useEffect(() => {
     if (user?.role !== 'ADMIN' || subTab !== 'overview') return;
     const controller = new AbortController();
     setDeliveryExceptions(null);
+    setDeliveryPilot(null);
     setDeliveryExceptionsError(false);
-    apiFetch<{ orders: NonNullable<typeof deliveryExceptions> }>('/admin/delivery-exceptions', { signal: controller.signal })
-      .then(({ orders }) => { if (!controller.signal.aborted) setDeliveryExceptions(orders); })
+    apiFetch<{ orders: NonNullable<typeof deliveryExceptions>; pilot?: YardDeliveryPilotMetrics }>('/admin/delivery-exceptions', { signal: controller.signal })
+      .then(({ orders, pilot }) => {
+        if (controller.signal.aborted) return;
+        setDeliveryExceptions(orders);
+        setDeliveryPilot(pilot ?? null);
+      })
       .catch(() => { if (!controller.signal.aborted) setDeliveryExceptionsError(true); });
     return () => controller.abort();
   }, [user?.id, user?.role, subTab]);
@@ -972,6 +978,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
         <div className="space-y-6">
           <section className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
             <h2 className="text-lg font-semibold">{t('Delivery exceptions')}</h2>
+            {deliveryPilot && <YardDeliveryPilot metrics={deliveryPilot} />}
             {deliveryExceptionsError ? <FormNotice error>{t('Delivery exceptions could not be loaded.')}</FormNotice>
               : deliveryExceptions === null ? <p role="status">{t('Loading delivery exceptions…')}</p>
               : !deliveryExceptions.length ? <p>{t('No overdue pilot orders')}</p>

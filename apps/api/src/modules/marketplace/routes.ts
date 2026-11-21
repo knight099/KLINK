@@ -1,4 +1,4 @@
-import { buildCheckout, checkoutQuoteInput, checkoutToken, deliveryOffer, pinCode } from '../../lib/yard-delivery';
+import { buildCheckout, checkoutQuoteInput, issueCheckoutToken, deliveryOffer, pinCode } from '../../lib/yard-delivery';
 import { money } from '../../lib/orders';
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -84,7 +84,7 @@ export const marketplaceRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.post('/delivery-quote', { schema: { body: checkoutQuoteInput } }, async (request) => {
     const quote = await buildCheckout(fastify.prisma, request.body);
     const expiresAt = Date.now() + 15 * 60_000;
-    return { ...quote, expiresAt, token: checkoutToken(request.body, quote, expiresAt) };
+    return { ...quote, expiresAt, token: issueCheckoutToken(request.body, quote, expiresAt) };
   });
 
   // Compare suppliers for a master product
