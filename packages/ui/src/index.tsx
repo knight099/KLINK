@@ -195,6 +195,7 @@ export type YardDeliveryPilotMetrics = {
   completedDeliveries: number;
   deliveredWithinWindow: number;
   openExceptions: number;
+  changedQuotes?: number;
 };
 
 export function YardDeliveryPilot({ metrics }: { metrics: YardDeliveryPilotMetrics }) {
@@ -211,6 +212,9 @@ export function YardDeliveryPilot({ metrics }: { metrics: YardDeliveryPilotMetri
       : t('No data yet')],
     ['Open exceptions across all orders', format(metrics.openExceptions)]
   ];
+  if (metrics.changedQuotes !== undefined) {
+    figures.push(['Checkout quotes changed in the last 30 days', format(metrics.changedQuotes)]);
+  }
 
   return (
     <section aria-label={t('Delivery pilot')}>

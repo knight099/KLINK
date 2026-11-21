@@ -377,6 +377,7 @@ export const hindi = {
   'Average minutes to confirm': 'पुष्टि में लगे औसत मिनट',
   'Deliveries within the confirmed window': 'तय समय के भीतर हुई डिलीवरी',
   'Open exceptions across all orders': 'सभी ऑर्डर की लंबित समस्याएँ',
+  'Checkout quotes changed in the last 30 days': 'पिछले 30 दिनों में चेकआउट पर बदले प्रस्ताव',
   'No data yet': 'अभी कोई डेटा नहीं है',
   'No overdue pilot orders': 'पायलट का कोई ऑर्डर विलंबित नहीं',
   'Loading delivery exceptions…': 'डिलीवरी समस्याएँ लोड हो रही हैं…',

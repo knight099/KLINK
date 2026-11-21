@@ -19,4 +19,10 @@
 - Add a 30-day order cohort to the admin delivery overview in both builds. Use the first yard confirmation event to measure response time, and compare the recorded delivery time with both bounds of the final confirmed window.
 - Count open delivery exceptions independently of the 100-order display limit. Include earlier open exceptions so support can still see the full workload.
 - Verify admin authorization and sample counts against isolated orders, including late deliveries, an exact deadline, an unconfirmed order, and an order outside the 30-day cohort.
-- Quote changes require recording a checkout event. Existing order records only contain the quote accepted at placement.
+
+## Checkout quote-change tracking
+
+- Sign pilot checkout tokens against the submitted yard, district, PIN code, and cart. Keep validating already-issued legacy tokens until they expire.
+- When a valid pilot quote no longer matches a successfully recalculated offer, record one event per buyer and reviewed quote, then keep the existing checkout conflict and review flow. Expired tokens, invalid signatures, different carts, and offers that cannot be recalculated are outside this count.
+- Show the number of changed quotes detected in the last 30 days in both admin builds. Store a deduplication digest and event time, with no quotes, addresses, or raw buyer identifiers.
+- Apply the additive quote-change migration before promoting builds that read it.

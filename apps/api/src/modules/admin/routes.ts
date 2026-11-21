@@ -31,6 +31,7 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
       averageConfirmationMinutes: number | null;
       completedDeliveries: number;
       deliveredWithinWindow: number;
+      changedQuotes: number;
     }>>`
       WITH recent_pilot_orders AS (
         SELECT "createdAt" AT TIME ZONE 'UTC' AS placed_at,
@@ -50,7 +51,11 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
              COUNT(confirmed_at)::int AS confirmed,
              ROUND(AVG(EXTRACT(EPOCH FROM confirmed_at - placed_at) / 60))::int AS "averageConfirmationMinutes",
              COUNT(delivered_at) FILTER (WHERE starts_at IS NOT NULL AND ends_at IS NOT NULL)::int AS "completedDeliveries",
-             COUNT(*) FILTER (WHERE delivered_at BETWEEN starts_at AND ends_at)::int AS "deliveredWithinWindow"
+             COUNT(*) FILTER (WHERE delivered_at BETWEEN starts_at AND ends_at)::int AS "deliveredWithinWindow",
+             (
+               SELECT COUNT(*)::int FROM "YardQuoteChange"
+               WHERE "createdAt" >= CURRENT_TIMESTAMP - make_interval(days => ${periodDays}::int)
+             ) AS "changedQuotes"
       FROM recent_pilot_orders
     `;
     return {

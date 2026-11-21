@@ -1,4 +1,4 @@
-import { buildCheckout, checkoutToken, type DeliverySchedule, scheduleFromOffer } from '../../lib/yard-delivery';
+import { buildCheckout, checkoutQuoteStatus, type DeliverySchedule, scheduleFromOffer } from '../../lib/yard-delivery';
 import { createHash, randomUUID } from 'node:crypto';
 import { lockSupplier } from '../../lib/orders';
 import { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
@@ -62,16 +62,15 @@ export const customerRoutes: FastifyPluginAsyncZod = async (fastify) => {
         }
 
         // 1. Validate supplier
-        const quote = await buildCheckout(tx, { supplierId, districtId, pincode, items });
+        const intent = { supplierId, districtId, pincode, items };
+        const quote = await buildCheckout(tx, intent);
         const { lines: orderItemsData, materialTotal: totalMaterialAmount, deliveryCharge: maxDeliveryCharge, finalTotal } = quote;
-        const token = quoteToken;
-        if (quote.offer || token) {
-          const deadline = Number(token?.split('.')[0]);
-          if (!Number.isSafeInteger(deadline) || deadline <= Date.now() || deadline > Date.now() + 15 * 60_000 ||
-              token !== checkoutToken({ supplierId, districtId, pincode }, quote, deadline)) {
-            throw fastify.httpErrors.conflict('The quote expired or changed. Review the latest quote before placing the order.');
-          }
+        const quoteStatus = checkoutQuoteStatus(quoteToken, intent, quote);
+        if (quoteStatus === 'CHANGED') {
+          const id = createHash('sha256').update(JSON.stringify([customerId, quoteToken])).digest('hex');
+          await tx.yardQuoteChange.createMany({ data: [{ id }], skipDuplicates: true });
         }
+        if (quoteStatus !== 'CURRENT') return null;
 
         // Generate collision-proof order number: KLK-<DISTRICT>-YYMMDD-<RANDOM>
         const district = await tx.district.findUnique({ where: { id: districtId } });
@@ -113,6 +112,7 @@ export const customerRoutes: FastifyPluginAsyncZod = async (fastify) => {
         });
       });
 
+      if (!order) throw fastify.httpErrors.conflict('The quote expired or changed. Review the latest quote before placing the order.');
       return reply.status(201).send({
         message: 'Order placed successfully. Waiting for supplier approval.',
         order

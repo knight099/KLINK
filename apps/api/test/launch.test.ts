@@ -4,6 +4,7 @@ import { after, before, test } from 'node:test';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
 import { buildApp } from '../src/app';
+import { issueCheckoutToken } from '../src/lib/yard-delivery';
 
 // Never run these integration tests against an operator's database.
 if (!process.env.DATABASE_URL?.includes('/klink_test')) throw new Error('Tests require a dedicated klink_test database');
@@ -273,7 +274,7 @@ test('admin pilot metrics count recent commitments and deliveries within the fin
     assert.ok(orders.some((item: { id: string }) => item.id === fixtures[2].id));
     assert.deepEqual(pilot, {
       periodDays: 30, placed: 3, confirmed: 2, averageConfirmationMinutes: 30,
-      completedDeliveries: 2, deliveredWithinWindow: 1, openExceptions: 1
+      completedDeliveries: 2, deliveredWithinWindow: 1, openExceptions: 1, changedQuotes: 0
     });
   } finally {
     const orderIds = fixtures.map(fixture => fixture.id);
@@ -301,7 +302,28 @@ test('a yard-managed order keeps the reviewed quote and requires buyer approval 
   const firstQuote = await call('POST', '/marketplace/delivery-quote', undefined, cart);
   assert.equal(firstQuote.statusCode, 200, firstQuote.body);
   await app.prisma.supplierProduct.update({ where: { id: ids.product }, data: { sellingPrice: 120 } });
-  assert.equal((await call('POST', '/customer/orders', tokens.customer, { ...orderInput, quoteToken: firstQuote.json().token })).statusCode, 409);
+  const { token: originalToken, expiresAt: _, ...originalQuote } = firstQuote.json();
+  const recentQuoteChanges = async () => {
+    const response = await call('GET', '/admin/delivery-exceptions', tokens.admin);
+    assert.equal(response.statusCode, 200, response.body);
+    return response.json().pilot.changedQuotes;
+  };
+  assert.equal(await recentQuoteChanges(), 0);
+  const invalidToken = originalToken.slice(0, -1) + (originalToken.endsWith('A') ? 'B' : 'A');
+  const differentItems = [{ ...cart.items[0], quantity: 3 }];
+  for (const input of [
+    { ...orderInput, quoteToken: invalidToken },
+    { ...orderInput, items: differentItems, quoteToken: originalToken },
+    { ...orderInput, quoteToken: issueCheckoutToken(cart, originalQuote, Date.now() - 1) }
+  ]) {
+    assert.equal((await call('POST', '/customer/orders', tokens.customer, input)).statusCode, 409);
+  }
+  assert.equal(await recentQuoteChanges(), 0);
+  const rejected = await Promise.all([1, 2].map(() =>
+    call('POST', '/customer/orders', tokens.customer, { ...orderInput, quoteToken: originalToken })
+  ));
+  assert.deepEqual(rejected.map(response => response.statusCode), [409, 409]);
+  assert.equal(await recentQuoteChanges(), 1);
 
   const quote = (await call('POST', '/marketplace/delivery-quote', undefined, cart)).json();
   const key = randomUUID();
