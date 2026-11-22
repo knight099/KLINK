@@ -1,4 +1,4 @@
-import { useLanguage, LanguageSwitch, FormError, type Message } from '@klink/ui';
+import { useLanguage, LanguageSwitch, FormError, CheckoutQuoteChanges, type CheckoutQuoteTerms, type Message } from '@klink/ui';
 import React, { useState, useEffect, useRef } from 'react';
 import { useCart } from '../lib/cart-context';
 import { useDistrict } from '../lib/district-context';
@@ -62,6 +62,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
   const [saveThisAddress, setSaveThisAddress] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
 
+  type CartQuote = CheckoutQuoteTerms & { token: string };
+  type ReviewedQuote = { request: string; quote: CartQuote };
+  const [quoted, setQuoted] = useState<ReviewedQuote | null>(null);
+  const [reviewedQuote, setReviewedQuote] = useState<ReviewedQuote | null>(null);
+
   const previousUserId = useRef(user?.id);
   const currentUserId = useRef(user?.id);
   currentUserId.current = user?.id;
@@ -79,6 +84,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
       setPaymentChoice('COD');
       setStep('cart');
       setError(null);
+      setQuoted(null);
+      setReviewedQuote(null);
       addressEdited.current = false;
     }
     previousUserId.current = user?.id;
@@ -110,14 +117,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
     return () => { active = false; };
   }, [isOpen, user?.id]);
 
-  type CartQuote = {
-    token: string;
-    materialTotal: number;
-    deliveryCharge: number;
-    finalTotal: number;
-    offer: { minHours: number; maxHours: number } | null;
-  };
-  const [quoted, setQuoted] = useState<{ request: string; quote: CartQuote } | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [quoteAttempt, setQuoteAttempt] = useState(0);
   const quoteRequest = isOpen && currentStep === 'review' && supplierId && activeDistrict
@@ -265,6 +264,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
         }).catch((error) => console.error('Could not save delivery address:', error));
       }
 
+      setReviewedQuote(null);
       clearCart();
       setStep('cart');
       onOrderSuccess(res.order);
@@ -272,6 +272,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
       if (!err?.status || err.status >= 500) {
         setError({ fallback: 'Order response was interrupted. Retry the same order to confirm.' });
       } else if (err.status === 409) {
+        setReviewedQuote(quoted);
         setQuoted(null);
         setQuoteAttempt(attempt => attempt + 1);
         setError({ fallback: 'Quote changed or expired. Review the latest terms.' });
@@ -669,6 +670,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose, onOrder
                   setQuoteError(null);
                   setQuoteAttempt(attempt => attempt + 1);
                 }}>{t('Try again')}</button>
+              )}
+              {reviewedQuote?.request === quoteRequest && (
+                <div aria-live="polite">
+                  {quote && <CheckoutQuoteChanges previous={reviewedQuote.quote} updated={quote} />}
+                </div>
               )}
               {quote?.offer && <p className="text-sm font-semibold">{t('Delivery estimate after ordering')}: {quote.offer.minHours}–{quote.offer.maxHours} {t('Hours')}</p>}
               {/* Price Breakdown */}
