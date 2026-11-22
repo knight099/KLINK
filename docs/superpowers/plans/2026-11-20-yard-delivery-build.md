@@ -14,6 +14,12 @@
 - Apply migration `202611200001_yard_delivery` using the approved direct production database connection and verify its status before promoting the staged builds. The Prisma client reads the new columns even when every pilot yard is disabled.
 - Standalone Vercel previews proxy to the production API. Use a migrated isolated database and local or isolated API for end-to-end tests. In production, check the unified API deployment first, then the customer and distributor portals. No preview or production test order should be created against the live database.
 
+## Readiness and support follow-up
+
+- Have API readiness check the supplier delivery columns, order schedule, and quote-change table. Keep liveness independent of the database and keep internal details out of the readiness response.
+- Show active proposed delivery windows awaiting buyer approval in both admin builds. Keep overdue deliveries ahead of proposals in the queue and omit terminal orders and expired proposals.
+- Verify the readiness response on pre-pilot and migrated schemas. Verify the support queue with isolated orders.
+
 ## Pilot measurement follow-up
 
 - Add a 30-day order cohort to the admin delivery overview in both builds. Use the first yard confirmation event to measure response time, and compare the recorded delivery time with both bounds of the final confirmed window.
@@ -26,3 +32,9 @@
 - When a valid pilot quote no longer matches a successfully recalculated offer, record one event per buyer and reviewed quote, then keep the existing checkout conflict and review flow. Expired tokens, invalid signatures, different carts, and offers that cannot be recalculated are outside this count.
 - Show the number of changed quotes detected in the last 30 days in both admin builds. Store a deduplication digest and event time, with no quotes, addresses, or raw buyer identifiers.
 - Apply the additive quote-change migration before promoting builds that read it.
+
+## Buyer review of refreshed quotes
+
+- On a checkout conflict, keep the quote the buyer reviewed in memory while fetching the replacement for the same cart and delivery PIN.
+- Show the previous and current unit prices, materials subtotal, delivery charge, amount due, and delivery estimate when those values changed. Preserve the entered delivery details and require the buyer to place the order again.
+- Verify the conflict and renewed review in English and Hindi in both marketplace builds. An identical refreshed quote needs no comparison.

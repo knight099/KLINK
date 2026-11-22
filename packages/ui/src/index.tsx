@@ -230,3 +230,55 @@ export function YardDeliveryPilot({ metrics }: { metrics: YardDeliveryPilotMetri
     </section>
   );
 }
+
+export type CheckoutQuoteTerms = {
+  materialTotal: number;
+  deliveryCharge: number;
+  finalTotal: number;
+  offer: { minHours: number; maxHours: number } | null;
+  lines?: Array<{ supplierProductId: string; masterProductName: string; unitPrice: number }>;
+};
+
+export function CheckoutQuoteChanges({ previous, updated }: { previous: CheckoutQuoteTerms; updated: CheckoutQuoteTerms }) {
+  const { t, language } = useLanguage();
+  const { format } = new Intl.NumberFormat(language === 'hi' ? 'hi-IN' : 'en-IN', { style: 'currency', currency: 'INR' });
+  const windowText = (offer: CheckoutQuoteTerms['offer']) => offer
+    ? `${offer.minHours}–${offer.maxHours} ${t('Hours')}`
+    : t('No delivery estimate');
+  const rows = [
+    { key: 'materialTotal', label: t('Materials Subtotal'), before: format(previous.materialTotal), after: format(updated.materialTotal) },
+    { key: 'deliveryCharge', label: t('Delivery charge'), before: format(previous.deliveryCharge), after: format(updated.deliveryCharge) },
+    { key: 'finalTotal', label: t('Amount due'), before: format(previous.finalTotal), after: format(updated.finalTotal) },
+    { key: 'estimate', label: t('Delivery estimate after ordering'), before: windowText(previous.offer), after: windowText(updated.offer) }
+  ];
+  const previousLines = new Map(previous.lines?.map(line => [line.supplierProductId, line.unitPrice]));
+  for (const line of updated.lines ?? []) {
+    const oldPrice = previousLines.get(line.supplierProductId);
+    if (oldPrice === undefined || oldPrice === line.unitPrice) continue;
+    rows.push({
+      key: `line-${line.supplierProductId}`,
+      label: `${line.masterProductName} · ${t('Unit price')}`,
+      before: format(oldPrice),
+      after: format(line.unitPrice)
+    });
+  }
+  const changed = rows.filter(row => row.before !== row.after);
+  if (!changed.length) return null;
+  const heading = t('What changed in your quote');
+  return (
+    <section aria-label={heading} className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">
+      <h4 className="font-semibold">{heading}</h4>
+      <ul className="divide-y divide-amber-200">
+        {changed.map(({ key, label, before, after }) => (
+          <li key={key} className="break-words py-2">
+            <p className="font-semibold">{label}</p>
+            <dl className="mt-1 grid grid-cols-2 gap-3">
+              <div><dt>{t('Previous quote')}</dt><dd className="tabular-nums">{before}</dd></div>
+              <div><dt>{t('Updated quote')}</dt><dd className="font-semibold tabular-nums">{after}</dd></div>
+            </dl>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}

@@ -283,6 +283,41 @@ test('admin pilot metrics count recent commitments and deliveries within the fin
   }
 });
 
+test('delivery support shows active proposals after overdue deliveries and omits terminal orders', async () => {
+  const now = Date.now();
+  const iso = (hours: number) => new Date(now + hours * 3_600_000).toISOString();
+  const requested = { startsAt: iso(-2), endsAt: iso(-1) };
+  const proposed = { startsAt: iso(1), endsAt: iso(2) };
+  const [awaiting, late, cancelled, expired] = await Promise.all([
+    order(), order('CONFIRMED'), order('CANCELLED'), order()
+  ]);
+  const ids = [awaiting.id, late.id, cancelled.id, expired.id];
+  try {
+    await Promise.all([
+      app.prisma.order.updateMany({ where: { id: { in: [awaiting.id, cancelled.id] } }, data: {
+        deliverySchedule: { requested, proposed, respondBy: iso(-1), events: [] }
+      } }),
+      app.prisma.order.update({ where: { id: late.id }, data: {
+        deliverySchedule: { requested, proposed, confirmed: requested, respondBy: iso(-1), events: [] }
+      } }),
+      app.prisma.order.update({ where: { id: expired.id }, data: {
+        deliverySchedule: { requested, proposed: requested, respondBy: iso(1), events: [] }
+      } })
+    ]);
+    const response = await call('GET', '/admin/delivery-exceptions', tokens.admin);
+    assert.equal(response.statusCode, 200, response.body);
+    const { orders, pilot } = response.json();
+    assert.deepEqual(orders.map(({ id, reason }: { id: string; reason: string }) => [id, reason]), [
+      [late.id, 'DELIVERY'], [awaiting.id, 'PROPOSAL']
+    ]);
+    assert.equal(pilot.openExceptions, 2);
+    assert.equal((await app.inject({ url: '/api/health' })).statusCode, 200);
+  } finally {
+    await app.prisma.orderItem.deleteMany({ where: { orderId: { in: ids } } });
+    await app.prisma.order.deleteMany({ where: { id: { in: ids } } });
+  }
+});
+
 test('a yard-managed order keeps the reviewed quote and requires buyer approval for a changed window', async () => {
   await app.prisma.supplierProduct.update({
     where: { id: ids.product },

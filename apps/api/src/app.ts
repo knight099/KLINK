@@ -65,12 +65,19 @@ export function buildApp() {
     return reply.status(status).send({ error: status === 500 ? 'Internal server error' : error.message });
   });
 
-  const readiness = async (_request: unknown, reply: import('fastify').FastifyReply) => {
+  const readiness = async (request: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply) => {
     reply.header('Cache-Control', 'no-store');
     try {
-      await app.prisma.$queryRaw`SELECT 1`;
+      await app.prisma.$queryRaw`
+        SELECT s."deliveryPincodes", s."deliveryMinHours", s."deliveryMaxHours",
+               o."deliverySchedule", q.id, q."createdAt"
+        FROM "Supplier" s CROSS JOIN "Order" o CROSS JOIN "YardQuoteChange" q
+        LIMIT 0
+      `;
       return { status: 'ok', service: 'klink-marketplace-api' };
-    } catch {
+    } catch (error) {
+      const failure = error as { code?: string; meta?: { code?: string } } | null;
+      request.log.warn({ prismaCode: failure?.code, databaseCode: failure?.meta?.code }, 'Database readiness check failed');
       return reply.status(503).send({ status: 'unavailable', service: 'klink-marketplace-api' });
     }
   };

@@ -30,3 +30,23 @@ test('unavailable database returns readiness 503 without internal details', asyn
     assert.equal(res.body.includes('private-database'), false);
   } finally { await app.close(); }
 });
+
+test('missing yard schema fails readiness while liveness remains healthy', async () => {
+  process.env.JWT_SECRET = 'test-secret-with-at-least-32-characters';
+  const app = buildApp();
+  await app.ready();
+  app.prisma.$queryRaw = async (parts: TemplateStringsArray) => {
+    const sql = parts.join(' ');
+    if (sql.includes('deliveryPincodes')) throw new Error('missing Supplier.deliveryPincodes');
+    return [];
+  };
+  try {
+    for (const url of ['/health', '/api/health']) {
+      const result = await app.inject({ url });
+      assert.equal(result.statusCode, 503);
+      assert.deepEqual(result.json(), { status: 'unavailable', service: 'klink-marketplace-api' });
+      assert.equal(result.headers['cache-control'], 'no-store');
+    }
+    assert.equal((await app.inject({ url: '/api/live' })).statusCode, 200);
+  } finally { await app.close(); }
+});

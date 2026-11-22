@@ -37,6 +37,12 @@ import {
   Eye
 } from 'lucide-react';
 
+const deliveryExceptionLabels = {
+  RESPONSE: 'Yard response overdue',
+  DELIVERY: 'Delivery window overdue',
+  PROPOSAL: 'Proposed window awaiting buyer approval'
+} as const;
+
 interface AdminPortalProps {
   subTab: 'overview' | 'suppliers' | 'consumers' | 'orders' | 'payments' | 'users' | 'catalog';
   setSubTab: (tab: 'overview' | 'suppliers' | 'consumers' | 'orders' | 'payments' | 'users' | 'catalog') => void;
@@ -128,7 +134,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
   const [paymentsError, setPaymentsError] = useState(false);
   const [paymentSearch, setPaymentSearch] = useState('');
 
-  const [deliveryExceptions, setDeliveryExceptions] = useState<Array<{ id: string; orderNumber: string; supplierName: string; reason: 'RESPONSE' | 'DELIVERY' }> | null>(null);
+  const [deliveryExceptions, setDeliveryExceptions] = useState<Array<{ id: string; orderNumber: string; supplierName: string; reason: keyof typeof deliveryExceptionLabels }> | null>(null);
   const [deliveryPilot, setDeliveryPilot] = useState<YardDeliveryPilotMetrics | null>(null);
   const [deliveryExceptionsError, setDeliveryExceptionsError] = useState(false);
 
@@ -981,13 +987,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ subTab, setSubTab }) =
             {deliveryPilot && <YardDeliveryPilot metrics={deliveryPilot} />}
             {deliveryExceptionsError ? <FormNotice error>{t('Delivery exceptions could not be loaded.')}</FormNotice>
               : deliveryExceptions === null ? <p role="status">{t('Loading delivery exceptions…')}</p>
-              : !deliveryExceptions.length ? <p>{t('No overdue pilot orders')}</p>
+              : !deliveryExceptions.length ? <p>{t('No pilot orders need attention')}</p>
               : <ul className="divide-y divide-stone-200">
                   {deliveryExceptions.map(order => (
                     <li key={order.id} className="flex flex-wrap items-center justify-between gap-3 py-2">
                       <div className="min-w-0 break-words text-sm">
                         <p className="font-semibold">{order.orderNumber}</p>
-                        <p>{order.supplierName} · {t(order.reason === 'RESPONSE' ? 'Yard response overdue' : 'Delivery window overdue')}</p>
+                        <p>{order.supplierName} · {t(deliveryExceptionLabels[order.reason])}</p>
                       </div>
                       <button type="button" className="min-h-11 underline" onClick={() => findOrder(order.orderNumber)}>{t('Open order')}</button>
                     </li>
