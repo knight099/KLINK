@@ -3,8 +3,22 @@ import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
+function getDemoPasswords() {
+  const keys = ['DEMO_ADMIN_PASSWORD', 'DEMO_SUPPLIER_PASSWORD', 'DEMO_CUSTOMER_PASSWORD'] as const;
+  const passwords = keys.map((key) => {
+    const value = process.env[key];
+    if (!value || value.length < 16 || Buffer.byteLength(value, 'utf8') > 72) {
+      throw new Error(`${key} must have at least 16 characters and at most 72 UTF-8 bytes`);
+    }
+    return value;
+  });
+  if (new Set(passwords).size !== passwords.length) throw new Error('Demo roles require distinct passwords');
+  return passwords;
+}
+
 async function main() {
   if (process.env.NODE_ENV === 'production' || process.env.ALLOW_DEMO_SEED !== 'true') throw new Error('Demo seed requires ALLOW_DEMO_SEED=true and is forbidden in production');
+  const [adminSecret, supplierSecret, customerSecret] = getDemoPasswords();
   console.log('🌱 Starting database seed for KLINK (Darbhanga Marketplace)...');
 
   // 1. Geo: State & Districts
@@ -396,9 +410,9 @@ async function main() {
   console.log(`📦 Seeded ${masterProducts.length} Master Products`);
 
   // 5. Users & Roles
-  const adminPassword = await bcrypt.hash('admin123', 10);
-  const supplierPassword = await bcrypt.hash('supplier123', 10);
-  const customerPassword = await bcrypt.hash('customer123', 10);
+  const adminPassword = await bcrypt.hash(adminSecret, 10);
+  const supplierPassword = await bcrypt.hash(supplierSecret, 10);
+  const customerPassword = await bcrypt.hash(customerSecret, 10);
 
   // Admin User
   await prisma.user.upsert({
@@ -1265,16 +1279,16 @@ async function main() {
   console.log('📋 Seeded 8 realistic mock orders and Udhaar ledger balances');
   console.log('✅ Full database seed completed successfully!');
   console.log('--------------------------------------------------');
-  console.log('Demo Credentials:');
+  console.log('Demo sign-in accounts (use the passwords supplied for this seed):');
   console.log('  Admin:');
-  console.log('    9999999999 / admin123 (Platform Operations)');
+  console.log('    9999999999 (Platform Operations)');
   console.log('  Suppliers (3 Active Yards in Darbhanga):');
-  console.log('    9876543210 / supplier123 (Gupta Building Materials - Donar Chowk)');
-  console.log('    9876543211 / supplier123 (Singh Traders & Steels - Laheriasarai)');
-  console.log('    9876543212 / supplier123 (Maa Durga Aggregates & Bricks - Benta)');
-  console.log('  Consumers (10 Active Local Buyers, all password "customer123"):');
+  console.log('    9876543210 (Gupta Building Materials - Donar Chowk)');
+  console.log('    9876543211 (Singh Traders & Steels - Laheriasarai)');
+  console.log('    9876543212 (Maa Durga Aggregates & Bricks - Benta)');
+  console.log('  Consumers (10 Active Local Buyers):');
   customersData.forEach((c) => {
-    console.log(`    ${c.phone} / customer123 (${c.fullName} - ${c.type})`);
+    console.log(`    ${c.phone} (${c.fullName} - ${c.type})`);
   });
   console.log('--------------------------------------------------');
 }

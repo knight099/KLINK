@@ -25,7 +25,7 @@ corepack pnpm dev:web
 
 The standalone API loads the root `.env`; frontend dev servers use the API on port 4000. The unified web app uses port 3000. For the separate apps use `dev:market`, `dev:partner`, and `dev:admin` (ports 3000, 3001, 3002).
 
-For disposable local demo data only, run `ALLOW_DEMO_SEED=true pnpm db:seed` with `NODE_ENV=development` and a local database. The seed is **not a production initialization command**. It creates known-password sample users and business records. The demo UI stays off unless explicitly enabled with `VITE_DEMO_MODE=true`.
+For disposable local demo data only, run `ALLOW_DEMO_SEED=true pnpm db:seed` with `NODE_ENV=development` and a local database. The seed is **not a production initialization command**. It creates sample users and business records. Supply distinct `DEMO_ADMIN_PASSWORD`, `DEMO_SUPPLIER_PASSWORD`, and `DEMO_CUSTOMER_PASSWORD` values of at least 16 characters (up to 72 UTF-8 bytes) through your local environment. The seed prints demo phone numbers for manual sign-in. Existing seeded sign-in passwords remain in place when the seed is rerun.
 
 ## Checks
 
