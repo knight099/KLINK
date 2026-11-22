@@ -32,3 +32,9 @@
 - When a valid pilot quote no longer matches a successfully recalculated offer, record one event per buyer and reviewed quote, then keep the existing checkout conflict and review flow. Expired tokens, invalid signatures, different carts, and offers that cannot be recalculated are outside this count.
 - Show the number of changed quotes detected in the last 30 days in both admin builds. Store a deduplication digest and event time, with no quotes, addresses, or raw buyer identifiers.
 - Apply the additive quote-change migration before promoting builds that read it.
+
+## Buyer review of refreshed quotes
+
+- On a checkout conflict, keep the quote the buyer reviewed in memory while fetching the replacement for the same cart and delivery PIN.
+- Show the previous and current unit prices, materials subtotal, delivery charge, amount due, and delivery estimate when those values changed. Preserve the entered delivery details and require the buyer to place the order again.
+- Verify the conflict and renewed review in English and Hindi in both marketplace builds. An identical refreshed quote needs no comparison.
