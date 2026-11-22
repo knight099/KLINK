@@ -14,6 +14,12 @@
 - Apply migration `202611200001_yard_delivery` using the approved direct production database connection and verify its status before promoting the staged builds. The Prisma client reads the new columns even when every pilot yard is disabled.
 - Standalone Vercel previews proxy to the production API. Use a migrated isolated database and local or isolated API for end-to-end tests. In production, check the unified API deployment first, then the customer and distributor portals. No preview or production test order should be created against the live database.
 
+## Readiness and support follow-up
+
+- Have API readiness check the supplier delivery columns, order schedule, and quote-change table. Keep liveness independent of the database and keep internal details out of the readiness response.
+- Show active proposed delivery windows awaiting buyer approval in both admin builds. Keep overdue deliveries ahead of proposals in the queue and omit terminal orders and expired proposals.
+- Verify the readiness response on pre-pilot and migrated schemas. Verify the support queue with isolated orders.
+
 ## Pilot measurement follow-up
 
 - Add a 30-day order cohort to the admin delivery overview in both builds. Use the first yard confirmation event to measure response time, and compare the recorded delivery time with both bounds of the final confirmed window.

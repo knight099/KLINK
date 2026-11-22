@@ -34,7 +34,7 @@ Storage is optional. If required, configure `AWS_ENDPOINT_URL_S3`, `AWS_REGION`,
    ```
 
    Do **not** mark the session-version or payment-idempotency migrations applied unless their exact changes already exist. Migration 002 adds session versions; migration 003 adds nullable payment retry metadata and a unique key. Migration 004 adds nullable order retry metadata. All preserve existing records. Every old JWT lacks the session version and will be rejected: all users must sign in again.
-5. Deploy the release after migrations succeed. Confirm the new health route returns JSON, not frontend HTML.
+5. For the yard-delivery release, verify that Prisma applied `202611200001_yard_delivery` and `202611200002_yard_quote_changes`. Check `/api/health` and the supplier list on the staged unified deployment before assigning production domains.
 
 For a brand-new empty database, just run `pnpm db:migrate`. Bootstrap the initial admin using securely supplied `ADMIN_PHONE` (10 digits) and `ADMIN_PASSWORD` (16+ characters, max 72 UTF-8 bytes), then `pnpm db:bootstrap`. It refuses to overwrite an existing admin and creates no demo accounts or financial records. Existing deployments should reset known sample passwords through the verified admin workflow, remove unnecessary demo users safely, and rotate any previously exposed secrets.
 
@@ -44,7 +44,7 @@ Create additional Vercel projects rooted at `apps/marketplace-web`, `apps/partne
 
 ## Required production checks
 
-- `GET /api/live`: 200 liveness JSON. `GET /api/health` and `/health`: 200 readiness JSON, or 503 when the database is unavailable. API responses use `Cache-Control: no-store`.
+- `GET /api/live`: 200 liveness JSON. `GET /api/health` and `/health`: 200 readiness JSON, or 503 when the database is unavailable or the yard-delivery schema is missing. API responses use `Cache-Control: no-store`.
 - Add Vercel WAF/distributed rate limits for **all** `/api/v1/auth/*` endpoints and request-volume monitoring. The built-in in-memory limiter is per instance and cannot enforce a deployment-wide quota.
 - Set error/uptime alerts, configure log retention and access, and verify Neon recovery/retention matches the business's RPO/RTO. Perform a restore drill; a configured backup is not a verified recovery.
 - Verify login, forced password changes, suspended suppliers, customer ordering, acceptance, dispatch, delivery, cash/UPI recording, and ledger totals on staging. Try a second supplier to confirm tenant isolation.

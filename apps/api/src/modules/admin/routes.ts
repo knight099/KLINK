@@ -10,18 +10,25 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
 
   fastify.get('/delivery-exceptions', async () => {
     const orders = await fastify.prisma.$queryRaw<Array<{
-      id: string; orderNumber: string; supplierName: string; reason: 'RESPONSE' | 'DELIVERY'; total: number
+      id: string; orderNumber: string; supplierName: string; reason: 'RESPONSE' | 'DELIVERY' | 'PROPOSAL'; total: number
     }>>`
-      SELECT o.id, o."orderNumber", s."businessName" AS "supplierName",
-             CASE WHEN o.status = 'PENDING_APPROVAL' THEN 'RESPONSE' ELSE 'DELIVERY' END AS reason,
-             COUNT(*) OVER ()::int AS total
-      FROM "Order" o JOIN "Supplier" s ON s.id = o."supplierId"
-      WHERE o."deliverySchedule" IS NOT NULL AND (
-        (o.status = 'PENDING_APPROVAL' AND (o."deliverySchedule"->>'respondBy')::timestamptz < CURRENT_TIMESTAMP)
-        OR (o.status IN ('CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY')
-          AND (o."deliverySchedule"->'confirmed'->>'endsAt')::timestamptz < CURRENT_TIMESTAMP)
+      WITH attention AS (
+        SELECT id, "orderNumber", "supplierId", "createdAt",
+               CASE
+                 WHEN status <> 'PENDING_APPROVAL'
+                   AND ("deliverySchedule"->'confirmed'->>'endsAt')::timestamptz < CURRENT_TIMESTAMP THEN 'DELIVERY'
+                 WHEN ("deliverySchedule"->'proposed'->>'endsAt')::timestamptz > CURRENT_TIMESTAMP THEN 'PROPOSAL'
+                 WHEN status = 'PENDING_APPROVAL'
+                   AND ("deliverySchedule"->>'respondBy')::timestamptz < CURRENT_TIMESTAMP THEN 'RESPONSE'
+               END AS reason
+        FROM "Order"
+        WHERE "deliverySchedule" IS NOT NULL
+          AND status IN ('PENDING_APPROVAL', 'CONFIRMED', 'PREPARING', 'OUT_FOR_DELIVERY')
       )
-      ORDER BY o."createdAt" ASC, o.id
+      SELECT o.id, o."orderNumber", s."businessName" AS "supplierName", o.reason, COUNT(*) OVER ()::int AS total
+      FROM attention o JOIN "Supplier" s ON s.id = o."supplierId"
+      WHERE o.reason IS NOT NULL
+      ORDER BY (o.reason = 'PROPOSAL'), o."createdAt" ASC, o.id
       LIMIT 100
     `;
     const periodDays = 30;
